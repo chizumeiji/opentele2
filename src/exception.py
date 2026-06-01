@@ -1,7 +1,9 @@
 from __future__ import annotations
+
 import inspect
 import types
 import typing
+
 from .qt_compat import QDataStream
 
 __all__ = [
@@ -38,9 +40,7 @@ __all__ = [
 
 
 class OpenTeleException(BaseException):
-    def __init__(
-        self, message: typing.Optional[str] = None, stack_index: int = 1
-    ) -> None:
+    def __init__(self, message: str | None = None, stack_index: int = 1) -> None:
         super().__init__(message if (message is not None) else "")
 
         self.message = message
@@ -72,7 +72,7 @@ class OpenTeleException(BaseException):
         if self.desc == "OpenTeleException":
             self.desc = "Unexpected Exception"
 
-    def __str__(self):
+    def __str__(self) -> str:
         reason = self.desc.__str__()
 
         if self.message is not None:
@@ -201,9 +201,9 @@ class SessionFileInvalid(OpenTeleException):
 @typing.overload
 def Expects(
     condition: bool,
-    message: typing.Optional[str] = None,
-    done: typing.Optional[typing.Callable[[], None]] = None,
-    fail: typing.Optional[typing.Callable[[OpenTeleException], None]] = None,
+    message: str | None = None,
+    done: typing.Callable[[], None] | None = None,
+    fail: typing.Callable[[OpenTeleException], None] | None = None,
     silent: bool = False,
     stack_index: int = 1,
 ) -> bool: ...
@@ -212,9 +212,9 @@ def Expects(
 @typing.overload
 def Expects(
     condition: bool,
-    exception: typing.Optional[OpenTeleException] = None,
-    done: typing.Optional[typing.Callable[[], None]] = None,
-    fail: typing.Optional[typing.Callable[[OpenTeleException], None]] = None,
+    exception: OpenTeleException | None = None,
+    done: typing.Callable[[], None] | None = None,
+    fail: typing.Callable[[OpenTeleException], None] | None = None,
     silent: bool = False,
     stack_index: int = 1,
 ) -> bool: ...
@@ -222,9 +222,9 @@ def Expects(
 
 def Expects(
     condition: bool,
-    exception: typing.Optional[typing.Union[OpenTeleException, str]] = None,
-    done: typing.Optional[typing.Callable[[], None]] = None,
-    fail: typing.Optional[typing.Callable[[OpenTeleException], None]] = None,
+    exception: OpenTeleException | str | None = None,
+    done: typing.Callable[[], None] | None = None,
+    fail: typing.Callable[[OpenTeleException], None] | None = None,
     silent: bool = False,
     stack_index: int = 1,
 ) -> bool:
@@ -257,7 +257,9 @@ def Expects(
     raise exception
 
 
-def ExpectStreamStatus(stream: QDataStream, message: str = "Could not stream data"):
+def ExpectStreamStatus(
+    stream: QDataStream, message: str = "Could not stream data"
+) -> None:
     Expects(
         stream.status() == QDataStream.Status.Ok,
         stack_index=2,

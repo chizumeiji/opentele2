@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from ..utils import BaseObject
-from ..exception import Expects, ExpectStreamStatus, TDataBadConfigData
-from .configs import BuiltInDc, DcId
 from enum import IntEnum
-from typing import Dict, List
+
+from ..exception import Expects, ExpectStreamStatus, TDataBadConfigData
 from ..qt_compat import QByteArray, QDataStream, QIODevice
-import typing
+from ..utils import BaseObject
+from .configs import BuiltInDc, DcId
 
 _MAX_IP_SIZE = 45
 _MAX_SECRET_SIZE = 32
@@ -35,21 +34,26 @@ class MTP(BaseObject):  # nocov
 
         def __init__(self, enviroment: MTP.Environment) -> None:
             self._enviroment = enviroment
-            self._data: typing.Dict[DcId, typing.List[MTP.DcOptions.Endpoint]] = {}
+            self._data: dict[DcId, list[MTP.DcOptions.Endpoint]] = {}
 
             self.constructFromBuiltIn()
 
-        def isTestMode(self):
+        def isTestMode(self) -> bool:
             return self._enviroment != MTP.Environment.Production
 
         def constructAddOne(
             self, id: DcId, flags: MTP.DcOptions.Flag, ip: str, port: int, secret: bytes
-        ):
+        ) -> None:
             self.applyOneGuarded(DcId.BareDcId(id), flags, ip, port, secret)
 
         def applyOneGuarded(
-            self, id: DcId, flags: MTP.DcOptions.Flag, ip: str, port: int, secret: bytes
-        ):
+            self,
+            id: DcId,
+            flags: MTP.DcOptions.Flag,
+            ip: str,
+            port: int,
+            _secret: bytes,
+        ) -> None:
             if id not in self._data:
                 self._data[id] = []
             else:
@@ -57,13 +61,13 @@ class MTP(BaseObject):  # nocov
                     if (endpoint.ip == ip) and (endpoint.port == port):
                         continue
 
-            endpoint = MTP.DcOptions.Endpoint(id, flags, ip, port, bytes())
+            endpoint = MTP.DcOptions.Endpoint(id, flags, ip, port, b"")
             self._data[id].append(endpoint)
 
         def constructFromBuiltIn(self) -> None:
-            def addToData(dcs: List[BuiltInDc], flags: MTP.DcOptions.Flag):
+            def addToData(dcs: list[BuiltInDc], flags: MTP.DcOptions.Flag) -> None:
                 for dc in dcs:
-                    self.applyOneGuarded(dc.id, flags, dc.ip, dc.port, bytes())
+                    self.applyOneGuarded(dc.id, flags, dc.ip, dc.port, b"")
 
             if self.isTestMode():
                 dcs, dcs_ipv6 = BuiltInDc.kBuiltInDcsTest, BuiltInDc.kBuiltInDcsIPv6Test
@@ -78,7 +82,7 @@ class MTP(BaseObject):  # nocov
                 ),
             )  # type: ignore
 
-        def constructFromSerialized(self, serialized: QByteArray):
+        def constructFromSerialized(self, serialized: QByteArray) -> None:
             stream = _qt_stream(serialized)
 
             minusVersion = stream.readInt32()
@@ -100,7 +104,7 @@ class MTP(BaseObject):  # nocov
 
                 ip = stream.readRawData(ipSize).decode("ascii")
 
-                secret = bytes()
+                secret = b""
                 if version > 0:
                     secretSize = stream.readInt32()
                     Expects(
@@ -201,7 +205,7 @@ class MTP(BaseObject):  # nocov
             self.callConnectTimeoutMs = 30000
             self.callPacketTimeoutMs = 10000
             self.webFileDcId = 4
-            self.txtDomainString = str()
+            self.txtDomainString = ""
             self.phoneCallsEnabled = True
             self.blockedMode = False
             self.captionLengthMax = 1024
@@ -252,9 +256,9 @@ class MTP(BaseObject):  # nocov
 
         def endpoints(
             self, dcId: DcId = DcId._0
-        ) -> Dict[
+        ) -> dict[
             MTP.DcOptions.Address,
-            Dict[MTP.DcOptions.Protocol, List[MTP.DcOptions.Endpoint]],
+            dict[MTP.DcOptions.Protocol, list[MTP.DcOptions.Endpoint]],
         ]:
             endpoints = self._dcOptions._data[dcId]
 
@@ -263,7 +267,7 @@ class MTP(BaseObject):  # nocov
             Flag = MTP.DcOptions.Flag
             Endpoint = MTP.DcOptions.Endpoint
 
-            results: Dict[Address, Dict[Protocol, List[Endpoint]]] = {}  # type: ignore[valid-type]
+            results: dict[Address, dict[Protocol, list[Endpoint]]] = {}  # type: ignore[valid-type]
             results[Address.IPv4] = {Protocol.Tcp: [], Protocol.Http: []}  # type: ignore
             results[Address.IPv6] = {Protocol.Tcp: [], Protocol.Http: []}  # type: ignore
 
@@ -279,7 +283,7 @@ class MTP(BaseObject):  # nocov
             return results
 
         @staticmethod
-        def _write_field(stream: QDataStream, value) -> None:
+        def _write_field(stream: QDataStream, value: bool | int | str) -> None:
             if isinstance(value, bool):
                 stream.writeInt32(1 if value else 0)
             elif isinstance(value, int):
@@ -288,7 +292,10 @@ class MTP(BaseObject):  # nocov
                 stream.writeQString(value)
 
         @staticmethod
-        def _read_field(stream: QDataStream, field_type: type):
+        def _read_field(
+            stream: QDataStream,
+            field_type: type[bool] | type[int] | type[str],
+        ) -> bool | int | str:
             if field_type is bool:
                 return stream.readInt32() == 1
             elif field_type is int:

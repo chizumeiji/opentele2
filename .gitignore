@@ -10,3 +10,6 @@ build_script*
 .generated-files.txt
 dist/*
 *.egg-info/*
+
+tests/sessions/
+tests/tdatas/

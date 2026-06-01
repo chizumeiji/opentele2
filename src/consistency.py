@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import warnings
 from dataclasses import dataclass, field
-from typing import Any, List
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .tl.telethon import TelegramClient
 
 __all__ = [
     "ConsistencyChecker",
@@ -21,7 +24,7 @@ class CheckResult:
 
 @dataclass
 class ConsistencyReport:
-    checks: List[CheckResult] = field(default_factory=list)
+    checks: list[CheckResult] = field(default_factory=list)
 
     @property
     def all_passed(self) -> bool:
@@ -42,7 +45,7 @@ class ConsistencyReport:
 
 
 class ConsistencyChecker:
-    def __init__(self, client, *, auto_warn: bool = True):
+    def __init__(self, client: TelegramClient, *, auto_warn: bool = True) -> None:
         self._client = client
         self._auto_warn = auto_warn
 

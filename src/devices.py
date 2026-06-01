@@ -1,13 +1,15 @@
 from __future__ import annotations
-from typing import Any, Dict, List, Optional, Type, TypeVar
+
+from collections.abc import ItemsView
+from typing import Any, TypeVar
 
 try:
     from .utils import BaseObject
 except ImportError:
     from utils import BaseObject
 import hashlib
-import os
 import json
+import os
 
 __all__ = [
     "DeviceInfo",
@@ -26,10 +28,38 @@ _T = TypeVar("_T")
 _DEVICES_DIR = os.path.join(os.path.dirname(__file__), "devices")
 
 
-def _load_device_data(filename: str) -> dict:
+def _load_device_data(filename: str) -> dict[str, object]:
     filepath = os.path.join(_DEVICES_DIR, filename)
-    with open(filepath, "r", encoding="utf-8") as f:
+    with open(filepath, encoding="utf-8") as f:
         return json.load(f)
+
+
+class _LazyData:
+    """Lazy-loading wrapper: JSON is only read on first attribute access."""
+
+    def __init__(self, filename: str) -> None:
+        self._filename = filename
+        self._data: dict[str, object] | None = None
+
+    @property
+    def data(self) -> dict[str, object]:
+        if self._data is None:
+            self._data = _load_device_data(self._filename)
+        return self._data
+
+    def __getitem__(self, key: str) -> object:
+        return self.data[key]
+
+    def get(self, key: str, default: object = None) -> object:
+        return self.data.get(key, default)
+
+    def items(self) -> ItemsView[str, object]:
+        return self.data.items()
+
+
+_desktop_lazy = _LazyData("desktop.json")
+_mac_lazy = _LazyData("mac.json")
+_android_lazy = _LazyData("android.json")
 
 
 def _mac_identifier_to_name(identifier: str) -> str:
@@ -53,8 +83,8 @@ def _mac_identifier_to_name(identifier: str) -> str:
     return result
 
 
-class DeviceInfo(object):
-    def __init__(self, model, version) -> None:
+class DeviceInfo:
+    def __init__(self, model: str, version: str) -> None:
         self.model = model
         self.version = version
 
@@ -63,41 +93,41 @@ class DeviceInfo(object):
 
 
 class SystemInfo(BaseObject):
-    deviceList: List[DeviceInfo] = []
+    deviceList: list[DeviceInfo] = []
     device_models: Any = []
     system_versions: Any = []
 
     @classmethod
-    def RandomDevice(
-        cls: Type[SystemInfo], unique_id: Optional[str] = None
-    ) -> DeviceInfo:
+    def RandomDevice(cls: type[SystemInfo], unique_id: str | None = None) -> DeviceInfo:
         hash_id = cls._strtohashid(unique_id)
         return cls._RandomDevice(hash_id)
 
     @classmethod
-    def _RandomDevice(cls, hash_id: int):
+    def _RandomDevice(cls: type[SystemInfo], hash_id: int) -> DeviceInfo:
         cls.__gen__()
         return cls._hashtovalue(hash_id, cls.deviceList)
 
     @classmethod
-    def __gen__(cls):
+    def __gen__(cls: type[SystemInfo]) -> None:
         raise NotImplementedError(
             f"{cls.__name__} device not supported for randomize yet"
         )
 
     @classmethod
-    def _strtohashid(cls, unique_id: Optional[str] = None):
+    def _strtohashid(cls: type[SystemInfo], unique_id: str | None = None) -> int:
         if unique_id is not None and not isinstance(unique_id, str):
             unique_id = str(unique_id)
         byteid = os.urandom(32) if unique_id is None else unique_id.encode("utf-8")
         return int(hashlib.sha1(byteid).hexdigest(), 16) % (10**12)
 
     @classmethod
-    def _hashtorange(cls, hash_id: int, max, min=0):
+    def _hashtorange(
+        cls: type[SystemInfo], hash_id: int, max: int, min: int = 0
+    ) -> int:
         return hash_id % (max - min) + min
 
     @classmethod
-    def _hashtovalue(cls, hash_id: int, values: List[_T]) -> _T:
+    def _hashtovalue(cls, hash_id: int, values: list[_T]) -> _T:
         return values[hash_id % len(values)]
 
     @classmethod
@@ -106,14 +136,14 @@ class SystemInfo(BaseObject):
 
     @classmethod
     def _build_device_list(
-        cls, models: List[str], versions: List[str]
-    ) -> List[DeviceInfo]:
+        cls, models: list[str], versions: list[str]
+    ) -> list[DeviceInfo]:
         return [DeviceInfo(m, v) for m in models for v in versions]
 
     @classmethod
     def _build_weighted_device_list(
-        cls, models: List[str], versions: List[str], weights: dict
-    ) -> List[DeviceInfo]:
+        cls, models: list[str], versions: list[str], weights: dict
+    ) -> list[DeviceInfo]:
         result = []
         for m in models:
             w = weights.get(m, 1)
@@ -124,28 +154,39 @@ class SystemInfo(BaseObject):
         return result
 
     @classmethod
-    def _gen_cartesian(cls):
+    def _gen_cartesian(cls) -> None:
         if not cls.deviceList:
             cls.deviceList = cls._build_device_list(
                 cls.device_models, cls.system_versions
             )
 
 
-_desktop_data = _load_device_data("desktop.json")
-
-
 class GeneralDesktopDevice(SystemInfo):
-    device_models = [e["model"] for e in _desktop_data["models"]]
-    _model_weights = {e["model"]: e.get("weight", 1) for e in _desktop_data["models"]}
+    device_models: list[str] = []
+    _model_weights: dict[str, int] = {}
+    _data_loaded: bool = False
+
+    @classmethod
+    def _ensure_data(cls) -> None:
+        if not cls._data_loaded:
+            data = _desktop_lazy.data
+            cls.device_models = [e["model"] for e in data["models"]]
+            cls._model_weights = {
+                e["model"]: e.get("weight", 1) for e in data["models"]
+            }
+            cls._data_loaded = True
 
 
 class WindowsDevice(GeneralDesktopDevice):
-    system_versions = _desktop_data["versions"]
-    deviceList: List[DeviceInfo] = []
+    system_versions: list[str] = []
+    deviceList: list[DeviceInfo] = []
 
     @classmethod
-    def __gen__(cls: Type[WindowsDevice]) -> None:
+    def __gen__(cls: type[WindowsDevice]) -> None:
         if not cls.deviceList:
+            cls._ensure_data()
+            if not cls.system_versions:
+                cls.system_versions = _desktop_lazy["versions"]
             cleaned_models = []
             cleaned_weights = {}
             for m in cls.device_models:
@@ -158,17 +199,19 @@ class WindowsDevice(GeneralDesktopDevice):
 
 
 class LinuxDevice(GeneralDesktopDevice):
-    system_versions: List[str] = []
-    deviceList: List[DeviceInfo] = []
+    system_versions: list[str] = []
+    deviceList: list[DeviceInfo] = []
 
     @classmethod
-    def __gen__(cls: Type[LinuxDevice]) -> None:
+    def __gen__(cls: type[LinuxDevice]) -> None:
         if cls.system_versions:
             return
 
-        linux_distros = _desktop_data["linuxDistros"]
-        enviroments = _desktop_data["environments"]
-        wayland = _desktop_data["wayland"]
+        cls._ensure_data()
+        data = _desktop_lazy.data
+        linux_distros = data["linuxDistros"]
+        enviroments = data["environments"]
+        wayland = data["wayland"]
 
         versions = []
         for distro_name, distro_info in linux_distros.items():
@@ -190,19 +233,32 @@ class LinuxDevice(GeneralDesktopDevice):
         )
 
 
-_mac_data = _load_device_data("mac.json")
-
-
 class macOSDevice(GeneralDesktopDevice):
-    device_models = [e["model"] for e in _mac_data["models"]]
-    _model_weights = {e["model"]: e.get("weight", 1) for e in _mac_data["models"]}
-    system_versions = [e["version"] for e in _mac_data["versions"]]
-    _version_weights = {e["version"]: e.get("weight", 1) for e in _mac_data["versions"]}
-    deviceList: List[DeviceInfo] = []
+    device_models: list[str] = []
+    _model_weights: dict[str, int] = {}
+    system_versions: list[str] = []
+    _version_weights: dict[str, int] = {}
+    deviceList: list[DeviceInfo] = []
+    _mac_data_loaded: bool = False
 
     @classmethod
-    def __gen__(cls: Type[macOSDevice]) -> None:
+    def _ensure_mac_data(cls) -> None:
+        if not cls._mac_data_loaded:
+            data = _mac_lazy.data
+            cls.device_models = [e["model"] for e in data["models"]]
+            cls._model_weights = {
+                e["model"]: e.get("weight", 1) for e in data["models"]
+            }
+            cls.system_versions = [e["version"] for e in data["versions"]]
+            cls._version_weights = {
+                e["version"]: e.get("weight", 1) for e in data["versions"]
+            }
+            cls._mac_data_loaded = True
+
+    @classmethod
+    def __gen__(cls: type[macOSDevice]) -> None:
         if not cls.deviceList:
+            cls._ensure_mac_data()
             seen = []
             seen_weights = {}
             for model in cls.device_models:
@@ -228,8 +284,6 @@ class macOSDevice(GeneralDesktopDevice):
             )
 
 
-_android_data = _load_device_data("android.json")
-
 _SDK_TO_ANDROID = {
     24: "7",
     25: "7.1",
@@ -247,13 +301,19 @@ _SDK_TO_ANDROID = {
 
 
 class AndroidDevice(SystemInfo):
-    _devices = _android_data["devices"]
-    deviceList: List[DeviceInfo] = []
+    _devices: list | None = None
+    deviceList: list[DeviceInfo] = []
 
     @classmethod
-    def __gen__(cls: Type[AndroidDevice]) -> None:
+    def _ensure_android_data(cls) -> None:
+        if cls._devices is None:
+            cls._devices = _android_lazy["devices"]
+
+    @classmethod
+    def __gen__(cls: type[AndroidDevice]) -> None:
         if cls.deviceList:
             return
+        cls._ensure_android_data()
         result = []
         for entry in cls._devices:
             model = entry["model"]
@@ -293,7 +353,7 @@ class IOSDevice(SystemInfo):
         "final": [1, 2, 3, 4, 5],
     }
 
-    system_versions: Dict[int, Dict[int, List[int]]] = {
+    system_versions: dict[int, dict[int, list[int]]] = {
         12: {
             5: [5, 4, 3, 2, 1],
             4: [9, 8, 7, 6, 5, 4, 3, 2, 1],
@@ -351,7 +411,7 @@ class IOSDevice(SystemInfo):
         17: [26],
     }
 
-    _MAJOR_VERSION_WEIGHTS: Dict[int, int] = {
+    _MAJOR_VERSION_WEIGHTS: dict[int, int] = {
         26: 10,
         25: 1,
         24: 1,
@@ -369,10 +429,10 @@ class IOSDevice(SystemInfo):
         12: 1,
     }
 
-    deviceList: List[DeviceInfo] = []
+    deviceList: list[DeviceInfo] = []
 
     @classmethod
-    def _get_patch_pattern(cls, minor: int, max_minor: int) -> List[int]:
+    def _get_patch_pattern(cls, minor: int, max_minor: int) -> list[int]:
         if minor == 0:
             return cls.PATCH_PATTERNS["initial"]
         elif minor == 1:
@@ -386,21 +446,21 @@ class IOSDevice(SystemInfo):
 
     @classmethod
     def _generate_version_structure(
-        cls, major: int, max_minor: int = 8
-    ) -> Dict[int, List[int]]:
+        cls, _major: int, max_minor: int = 8
+    ) -> dict[int, list[int]]:
         result = {}
         for minor in range(max_minor + 1):
             result[minor] = cls._get_patch_pattern(minor, max_minor)
         return result
 
     @classmethod
-    def _expand_versions(cls, major: int, minor: int, patches: List[int]) -> List[str]:
+    def _expand_versions(cls, major: int, minor: int, patches: list[int]) -> list[str]:
         if not patches:
             return [f"{major}.{minor}"]
         return [f"{major}.{minor}.{patch}" for patch in patches]
 
     @classmethod
-    def __gen__(cls: Type[IOSDevice]) -> None:
+    def __gen__(cls: type[IOSDevice]) -> None:
         if cls.deviceList:
             return
 
@@ -417,7 +477,7 @@ class IOSDevice(SystemInfo):
                     major, max_minor
                 )
 
-        results: List[DeviceInfo] = []
+        results: list[DeviceInfo] = []
         seen_versions: set = set()
 
         for major in sorted(cls.system_versions.keys()):
@@ -436,7 +496,7 @@ class IOSDevice(SystemInfo):
 iOSDevice = IOSDevice
 
 
-def _get_firefox_latest_version():
+def _get_firefox_latest_version() -> tuple[int | None, int | None]:
     import urllib.request
     from urllib.error import HTTPError
 
@@ -460,7 +520,7 @@ def _get_firefox_latest_version():
         return None, None
 
 
-def _get_chrome_last_good_versions():
+def _get_chrome_last_good_versions() -> dict[str, object] | None:
     import urllib.request
     from urllib.error import HTTPError
 
@@ -508,14 +568,14 @@ def _parse_platform_from_ua(user_agent: str) -> str:
 
 
 class WebBrowserDevice(SystemInfo):
-    BROWSER_WEIGHTS: Dict[str, int] = {
+    BROWSER_WEIGHTS: dict[str, int] = {
         "chrome": 19,
         "edge": 2,
         "firefox": 1,
     }
 
-    deviceList: List[DeviceInfo] = []
-    _k_deviceList: List[DeviceInfo] = []
+    deviceList: list[DeviceInfo] = []
+    _k_deviceList: list[DeviceInfo] = []
     _generated = False
     _max_chromium = 145
     _firefox_max = 147
@@ -537,7 +597,7 @@ class WebBrowserDevice(SystemInfo):
             return
 
         try:
-            from browserforge.headers import HeaderGenerator, Browser
+            from browserforge.headers import Browser, HeaderGenerator
         except ImportError:
             raise ImportError(
                 "browserforge is required for web browser fingerprint generation. "
@@ -585,8 +645,8 @@ class WebBrowserDevice(SystemInfo):
             },
         ]
 
-        z_a_list: List[DeviceInfo] = []
-        k_list: List[DeviceInfo] = []
+        z_a_list: list[DeviceInfo] = []
+        k_list: list[DeviceInfo] = []
         seen_uas: set = set()
 
         for cfg in browser_configs:
@@ -635,7 +695,7 @@ class WebBrowserDevice(SystemInfo):
 
     @classmethod
     def RandomDevice(
-        cls, unique_id: Optional[str] = None, variant: str = "z"
+        cls, unique_id: str | None = None, variant: str = "z"
     ) -> DeviceInfo:
         hash_id = cls._strtohashid(unique_id)
         cls.__gen__()

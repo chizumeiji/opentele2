@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 import logging
-import typing
-from ctypes import sizeof, c_uint32 as uint32, c_uint64 as uint64
-from typing import Dict
-
-from ..qt_compat import QByteArray
+from ctypes import c_uint32 as uint32
+from ctypes import c_uint64 as uint64
+from ctypes import sizeof
 
 from ..exception import (
     Expects,
@@ -14,9 +12,14 @@ from ..exception import (
     TDataReadMapDataFailed,
     TDataReadMapDataIncorrectPasscode,
 )
+from ..qt_compat import QByteArray, QDataStream
 from ..utils import BaseObject
-from .configs import FileKey, PeerId, lskType
 from . import shared as td
+from .configs import FileKey, PeerId, lskType
+
+DraftMap = dict[PeerId, FileKey]
+DraftReadMap = dict[PeerId, bool]
+ParsedKeys = dict[str, int]
 
 
 class MapData(BaseObject):  # nocov
@@ -24,6 +27,7 @@ class MapData(BaseObject):  # nocov
     _LEGACY_SALT_SIZE = 32
 
     _KEY_TO_ATTR = {
+        "prefsKey": "_prefsKey",
         "locationsKey": "_locationsKey",
         "trustedBotsKey": "_trustedBotsKey",
         "recentStickersKeyOld": "_recentStickersKeyOld",
@@ -47,9 +51,13 @@ class MapData(BaseObject):  # nocov
         "userSettingsKey": "_settingsKey",
         "recentHashtagsAndBotsKey": "_recentHashtagsAndBotsKey",
         "exportSettingsKey": "_exportSettingsKey",
+        "roundPlaceholderKey": "_roundPlaceholderKey",
+        "inlineBotsDownloadsKey": "_inlineBotsDownloadsKey",
+        "mediaLastPlaybackPositionsKey": "_mediaLastPlaybackPositionsKey",
     }
 
     _LSK_KEY_MAP = {
+        lskType.lskPrefs: ("prefsKey",),
         lskType.lskLocations: ("locationsKey",),
         lskType.lskTrustedBots: ("trustedBotsKey",),
         lskType.lskRecentStickersOld: ("recentStickersKeyOld",),
@@ -81,6 +89,9 @@ class MapData(BaseObject):  # nocov
             "featuredCustomEmojiKey",
             "archivedCustomEmojiKey",
         ),
+        lskType.lskRoundPlaceholder: ("roundPlaceholderKey",),
+        lskType.lskInlineBotsDownloads: ("inlineBotsDownloadsKey",),
+        lskType.lskMediaLastPlaybackPositions: ("mediaLastPlaybackPositionsKey",),
     }
 
     _LSK_SKIP_TYPES = frozenset(
@@ -94,10 +105,12 @@ class MapData(BaseObject):  # nocov
     def __init__(self, basePath: str) -> None:
         self.basePath = basePath
 
-        self._draftsMap: Dict[PeerId, FileKey] = {}
-        self._draftCursorsMap: Dict[PeerId, FileKey] = {}
-        self._draftsNotReadMap: Dict[PeerId, bool] = {}
+        self._draftsMap: dict[PeerId, FileKey] = {}
+        self._draftCursorsMap: dict[PeerId, FileKey] = {}
+        self._draftsNotReadMap: dict[PeerId, bool] = {}
+        self._botStoragesMap: dict[PeerId, FileKey] = {}
 
+        self._prefsKey = FileKey(0)
         self._locationsKey = FileKey(0)
         self._trustedBotsKey = FileKey(0)
         self._installedStickersKey = FileKey(0)
@@ -110,8 +123,8 @@ class MapData(BaseObject):  # nocov
         self._featuredCustomEmojiKey = FileKey(0)
         self._archivedCustomEmojiKey = FileKey(0)
         self._searchSuggestionsKey = FileKey(0)
-        self._webviewStorageTokenBots = FileKey(0)
-        self._webviewStorageTokenOther = FileKey(0)
+        self._webviewStorageTokenBots = QByteArray()
+        self._webviewStorageTokenOther = QByteArray()
         self._savedGifsKey = FileKey(0)
         self._recentStickersKeyOld = FileKey(0)
         self._legacyBackgroundKeyDay = FileKey(0)
@@ -121,6 +134,9 @@ class MapData(BaseObject):  # nocov
         self._exportSettingsKey = FileKey(0)
         self._installedMasksKey = FileKey(0)
         self._recentMasksKey = FileKey(0)
+        self._roundPlaceholderKey = FileKey(0)
+        self._inlineBotsDownloadsKey = FileKey(0)
+        self._mediaLastPlaybackPositionsKey = FileKey(0)
 
     def read(self, localKey: td.AuthKey, legacyPasscode: QByteArray) -> None:
         try:
@@ -155,7 +171,8 @@ class MapData(BaseObject):  # nocov
                 keyData = td.Storage.DecryptLocal(legacyKeyEncrypted, legacyPasscodeKey)
             except OpenTeleException as e:
                 raise TDataReadMapDataIncorrectPasscode(
-                    "Could not decrypt pass-protected key from map file, maybe bad password..."
+                    "Could not decrypt pass-protected key from map file, "
+                    "maybe bad password..."
                 ) from e
 
             localKey = td.AuthKey.FromStream(keyData.stream)
@@ -167,10 +184,16 @@ class MapData(BaseObject):  # nocov
 
         self._parseMapStream(map, localKey, mapData.version)
 
-    def _parseMapStream(self, map, localKey, mapVersion) -> None:
-        draftsMap: typing.Dict[PeerId, FileKey] = {}
-        draftCursorsMap: typing.Dict[PeerId, FileKey] = {}
-        draftsNotReadMap: typing.Dict[PeerId, bool] = {}
+    def _parseMapStream(
+        self,
+        map: td.Storage.EncryptedDescriptor,
+        localKey: td.AuthKey,
+        mapVersion: int,
+    ) -> None:
+        draftsMap: DraftMap = {}
+        draftCursorsMap: DraftMap = {}
+        draftsNotReadMap: DraftReadMap = {}
+        botStoragesMap: DraftMap = {}
 
         keys = {k: 0 for k in self._KEY_TO_ATTR}
 
@@ -178,18 +201,37 @@ class MapData(BaseObject):  # nocov
             keyType = map.stream.readUInt32()
 
             if not self._readMapEntry(
-                keyType, map, draftsMap, draftCursorsMap, draftsNotReadMap, keys
+                keyType,
+                map,
+                draftsMap,
+                draftCursorsMap,
+                draftsNotReadMap,
+                botStoragesMap,
+                keys,
             ):
                 break
 
             ExpectStreamStatus(map.stream, "Could not stream data from mapData")
 
         self._applyParsedKeys(
-            localKey, mapVersion, draftsMap, draftCursorsMap, draftsNotReadMap, keys
+            localKey,
+            mapVersion,
+            draftsMap,
+            draftCursorsMap,
+            draftsNotReadMap,
+            botStoragesMap,
+            keys,
         )
 
     def _readMapEntry(
-        self, keyType, map, draftsMap, draftCursorsMap, draftsNotReadMap, keys
+        self,
+        keyType: int,
+        map: td.Storage.EncryptedDescriptor,
+        draftsMap: DraftMap,
+        draftCursorsMap: DraftMap,
+        draftsNotReadMap: DraftReadMap,
+        botStoragesMap: DraftMap,
+        keys: ParsedKeys,
     ) -> bool:
         if keyType == lskType.lskDraft:
             count = map.stream.readUInt32()
@@ -232,7 +274,19 @@ class MapData(BaseObject):  # nocov
             map.stream.readUInt64()
 
         elif keyType == lskType.lskWebviewTokens:
-            return False
+            bots = QByteArray()
+            other = QByteArray()
+            map.stream >> bots >> other
+            self._webviewStorageTokenBots = bots
+            self._webviewStorageTokenOther = other
+
+        elif keyType == lskType.lskBotStorages:
+            count = map.stream.readUInt32()
+            for i in range(count):
+                key = FileKey(map.stream.readUInt64())
+                peerIdSerialized = map.stream.readUInt64()
+                peerId = PeerId.FromSerialized(peerIdSerialized)
+                botStoragesMap[peerId] = key
 
         else:
             logging.warning(f"Unknown key type in encrypted map: {keyType}")
@@ -240,12 +294,20 @@ class MapData(BaseObject):  # nocov
         return True
 
     def _applyParsedKeys(
-        self, localKey, mapVersion, draftsMap, draftCursorsMap, draftsNotReadMap, keys
+        self,
+        localKey: td.AuthKey,
+        mapVersion: int,
+        draftsMap: DraftMap,
+        draftCursorsMap: DraftMap,
+        draftsNotReadMap: DraftReadMap,
+        botStoragesMap: DraftMap,
+        keys: ParsedKeys,
     ) -> None:
         self.__localKey = localKey
         self._draftsMap = draftsMap
         self._draftCursorsMap = draftCursorsMap
         self._draftsNotReadMap = draftsNotReadMap
+        self._botStoragesMap = botStoragesMap
         for key_name, attr_name in self._KEY_TO_ATTR.items():
             setattr(self, attr_name, keys[key_name])
         self._oldMapVersion = mapVersion
@@ -265,8 +327,13 @@ class MapData(BaseObject):  # nocov
             mapSize += (
                 sizeof(uint32) * 2 + len(self._draftCursorsMap) * sizeof(uint64) * 2
             )
+        if len(self._botStoragesMap) > 0:
+            mapSize += (
+                sizeof(uint32) * 2 + len(self._botStoragesMap) * sizeof(uint64) * 2
+            )
 
         single_key_fields = [
+            self._prefsKey,
             self._locationsKey,
             self._trustedBotsKey,
             self._recentStickersKeyOld,
@@ -276,6 +343,9 @@ class MapData(BaseObject):  # nocov
             self._recentHashtagsAndBotsKey,
             self._exportSettingsKey,
             self._searchSuggestionsKey,
+            self._roundPlaceholderKey,
+            self._inlineBotsDownloadsKey,
+            self._mediaLastPlaybackPositionsKey,
         ]
         for key in single_key_fields:
             if key:
@@ -297,13 +367,18 @@ class MapData(BaseObject):  # nocov
             self._featuredCustomEmojiKey,
             self._archivedCustomEmojiKey,
         )
-        mapSize += self._groupKeySize(
-            2, self._webviewStorageTokenBots, self._webviewStorageTokenOther
-        )
+        if self._webviewStorageTokenBots or self._webviewStorageTokenOther:
+            mapSize += (
+                sizeof(uint32)
+                + td.Serialize.bytearraySize(self._webviewStorageTokenBots)
+                + td.Serialize.bytearraySize(self._webviewStorageTokenOther)
+            )
 
         return mapSize
 
-    def _writeMapEntries(self, stream) -> None:
+    def _writeMapEntries(self, stream: QDataStream) -> None:
+        self._writeKeyIfSet(stream, lskType.lskPrefs, self._prefsKey)
+
         if len(self._draftsMap) > 0:
             stream.writeUInt32(lskType.lskDraft)
             stream.writeUInt32(len(self._draftsMap))
@@ -315,6 +390,13 @@ class MapData(BaseObject):  # nocov
             stream.writeUInt32(lskType.lskDraftPosition)
             stream.writeUInt32(len(self._draftCursorsMap))
             for key, value in self._draftCursorsMap.items():
+                stream.writeUInt64(value)
+                stream.writeUInt64(PeerId(key).Serialize())
+
+        if len(self._botStoragesMap) > 0:
+            stream.writeUInt32(lskType.lskBotStorages)
+            stream.writeUInt32(len(self._botStoragesMap))
+            for key, value in self._botStoragesMap.items():
                 stream.writeUInt64(value)
                 stream.writeUInt64(PeerId(key).Serialize())
 
@@ -360,28 +442,37 @@ class MapData(BaseObject):  # nocov
             stream, lskType.lskSearchSuggestions, self._searchSuggestionsKey
         )
 
-        self._writeKeyGroupIfAnySet(
+        if self._webviewStorageTokenBots or self._webviewStorageTokenOther:
+            stream.writeUInt32(lskType.lskWebviewTokens)
+            stream << self._webviewStorageTokenBots << self._webviewStorageTokenOther
+
+        self._writeKeyIfSet(
+            stream, lskType.lskRoundPlaceholder, self._roundPlaceholderKey
+        )
+        self._writeKeyIfSet(
+            stream, lskType.lskInlineBotsDownloads, self._inlineBotsDownloadsKey
+        )
+        self._writeKeyIfSet(
             stream,
-            lskType.lskWebviewTokens,
-            self._webviewStorageTokenBots,
-            self._webviewStorageTokenOther,
+            lskType.lskMediaLastPlaybackPositions,
+            self._mediaLastPlaybackPositionsKey,
         )
 
     @staticmethod
-    def _writeKeyIfSet(stream, keyType: int, keyValue) -> None:
+    def _writeKeyIfSet(stream: QDataStream, keyType: int, keyValue: int) -> None:
         if keyValue:
             stream.writeUInt32(keyType)
             stream.writeUInt64(keyValue)
 
     @staticmethod
-    def _writeKeyGroupIfAnySet(stream, keyType: int, *keys) -> None:
+    def _writeKeyGroupIfAnySet(stream: QDataStream, keyType: int, *keys: int) -> None:
         if any(keys):
             stream.writeUInt32(keyType)
             for key in keys:
                 stream.writeUInt64(key)
 
     @staticmethod
-    def _groupKeySize(count: int, *keys) -> int:
+    def _groupKeySize(count: int, *keys: int) -> int:
         if any(keys):
             return sizeof(uint32) + count * sizeof(uint64)
         return 0

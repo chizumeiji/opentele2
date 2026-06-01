@@ -1,12 +1,11 @@
 from __future__ import annotations
 
+import hashlib
+from enum import IntEnum
+
+from ..qt_compat import QDataStream
 from ..utils import BaseObject
 from .configs import DcId
-from enum import IntEnum
-from ..qt_compat import QDataStream
-
-import hashlib
-import typing
 
 
 class AuthKeyType(IntEnum):
@@ -21,7 +20,7 @@ class AuthKey(BaseObject):
 
     def __init__(
         self,
-        key: bytes = bytes(),
+        key: bytes = b"",
         type: AuthKeyType = AuthKeyType.Generated,
         dcId: DcId = DcId.Invalid,
     ) -> None:
@@ -49,9 +48,7 @@ class AuthKey(BaseObject):
         hash = hashlib.sha1(self.__key).digest()
         self.__keyId = int.from_bytes(hash[12 : 12 + 8], "little")
 
-    def prepareAES_oldmtp(
-        self, msgKey: bytes, send: bool
-    ) -> typing.Tuple[bytes, bytes]:
+    def prepareAES_oldmtp(self, msgKey: bytes, send: bool) -> tuple[bytes, bytes]:
         x = 0 if send else 8
         sha1_a = hashlib.sha1(msgKey[:16] + self.__key[x : x + 32]).digest()
 

@@ -5,7 +5,6 @@ import time
 import warnings
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
 
 __all__ = [
     "LAYER",
@@ -19,10 +18,8 @@ __all__ = [
 ]
 
 
-LAYER: int = 216
-
-
-_TELETHON_LAYER: Optional[int] = None
+_BASE_LAYER: int = 225
+_TELETHON_LAYER: int | None = None
 
 
 def _detect_telethon_layer() -> int:
@@ -33,8 +30,16 @@ def _detect_telethon_layer() -> int:
 
             _TELETHON_LAYER = _tl_layer
         except ImportError:
-            _TELETHON_LAYER = LAYER
+            _TELETHON_LAYER = _BASE_LAYER
     return _TELETHON_LAYER
+
+
+def _resolve_layer() -> int:
+    tl = _detect_telethon_layer()
+    return tl if tl > _BASE_LAYER else _BASE_LAYER
+
+
+LAYER: int = _resolve_layer()
 
 
 def get_recommended_layer() -> int:
@@ -42,8 +47,9 @@ def get_recommended_layer() -> int:
     diff = abs(telethon_layer - LAYER)
     if diff > 15:
         warnings.warn(
-            f"Telethon TL layer ({telethon_layer}) differs from the latest "
-            f"official schema layer ({LAYER}) by {diff} layers. "
+            f"Telethon TL layer ({telethon_layer}) differs from "
+            f"effective layer ({LAYER}, base={_BASE_LAYER}) "
+            f"by {diff} layers. "
             f"This may cause initConnection fingerprint inconsistencies. "
             f"Consider updating Telethon or opentele2.",
             stacklevel=2,
@@ -53,34 +59,34 @@ def get_recommended_layer() -> int:
 
 @dataclass
 class PlatformVersions:
-    android_app_version: str = "12.4.1"
-    android_app_version_code: int = 57428
-    android_sdk_range: Tuple[int, int] = (24, 35)
+    android_app_version: str = "12.7.3"
+    android_app_version_code: int = 6750
+    android_sdk_range: tuple[int, int] = (23, 35)
     android_latest_sdk: int = 35
 
-    ios_app_version: str = "12.3.1"
-    ios_build_number: int = 32078
-    ios_version_range: Tuple[str, str] = ("16.0", "26.2")
+    ios_app_version: str = "12.7"
+    ios_build_number: int = 32933
+    ios_version_range: tuple[str, str] = ("16.0", "26.2")
 
     ios_system_version: str = "26.2"
     macos_system_version: str = "macOS 26.2"
 
-    desktop_app_version: str = "6.5"
+    desktop_app_version: str = "6.8.2"
     desktop_app_version_suffix: str = "x64"
 
-    macos_app_version: str = "12.4.1"
-    macos_build_number: int = 277873
+    macos_app_version: str = "12.7"
+    macos_build_number: int = 281600
 
-    android_x_app_version: str = "12.4.1"
+    android_x_app_version: str = "0.28.3.1785"
 
     web_a_version: str = "12.0.17 A"
-    web_k_version: str = "1.4.2 K"
+    web_k_version: str = "2.2 K"
 
-    chrome_version: str = "144.0.0.0"
+    chrome_version: str = "148.0.0.0"
     user_agent: str = (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/144.0.0.0 Safari/537.36"
+        "Chrome/148.0.0.0 Safari/537.36"
     )
 
 
@@ -139,7 +145,7 @@ _VALID_LANG_PACKS = frozenset(
     }
 )
 
-_LANG_PACK_API_ID_MAP: Dict[str, int] = {
+_LANG_PACK_API_ID_MAP: dict[str, int] = {
     "tdesktop": 2040,
     "android": 6,
     "ios": 10840,
@@ -157,8 +163,8 @@ def validate_init_connection_params(
     lang_code: str,
     *,
     strict: bool = False,
-) -> List[str]:
-    issues: List[str] = []
+) -> list[str]:
+    issues: list[str] = []
 
     if lang_pack not in _VALID_LANG_PACKS:
         issues.append(
@@ -192,7 +198,11 @@ def validate_init_connection_params(
 
     if strict:
         _check_version_consistency(
-            lang_pack, app_version, system_version, device_model, issues
+            lang_pack,
+            app_version,
+            system_version,
+            _device_model=device_model,
+            issues=issues,
         )
 
     return issues
@@ -202,8 +212,8 @@ def _check_version_consistency(
     lang_pack: str,
     app_version: str,
     system_version: str,
-    device_model: str,
-    issues: List[str],
+    _device_model: str,
+    issues: list[str],
 ) -> None:
     pv = PLATFORM_VERSIONS
 
@@ -276,14 +286,14 @@ class FingerprintConfig:
     """Preferred transport type.  Official clients in 2025-2026 use
     ''obfuscated'' (intermediate padded with obfuscation) by default.
     Telethon supports ``ConnectionTcpObfuscated``.
-    
+
     Valid values: 'full', 'intermediate', 'abridged', 'obfuscated'.
     """
 
     warn_on_layer_mismatch: bool = True
     """Warn when Telethon layer differs from official by >5 layers."""
 
-    layer_override: Optional[int] = None
+    layer_override: int | None = None
     """If set, override the layer used in ``invokeWithLayer``.
     Use with caution — mismatched layers cause deserialization errors."""
 
@@ -298,7 +308,7 @@ class FingerprintConfig:
             return self.layer_override
         return get_recommended_layer()
 
-    def validate_params(self, **kwargs) -> None:
+    def validate_params(self, **kwargs: object) -> None:
         if not self.auto_validate:
             return
 
@@ -325,25 +335,33 @@ DEFAULT_CONFIG = FingerprintConfig()
 
 class TransportRecommendation:
     @staticmethod
-    def get_connection_class(lang_pack: str = "tdesktop"):
+    def get_connection_class(lang_pack: str = "tdesktop") -> type[object]:
+        normalized_lang_pack = lang_pack or "tdesktop"
         try:
-            from telethon.network.connection.tcpobfuscated import (
-                ConnectionTcpObfuscated,
-            )
+            if normalized_lang_pack:
+                from telethon.network.connection.tcpobfuscated import (
+                    ConnectionTcpObfuscated,
+                )
 
-            return ConnectionTcpObfuscated
+                return ConnectionTcpObfuscated
         except ImportError:
             from telethon.network.connection.tcpfull import ConnectionTcpFull
 
             return ConnectionTcpFull
 
     @staticmethod
-    def get_available_transports() -> Dict[str, Any]:
+    def get_available_transports() -> dict[str, type[object]]:
         _TRANSPORT_MODULES = {
             "full": "telethon.network.connection.tcpfull.ConnectionTcpFull",
-            "abridged": "telethon.network.connection.tcpabridged.ConnectionTcpAbridged",
-            "intermediate": "telethon.network.connection.tcpintermediate.ConnectionTcpIntermediate",
-            "obfuscated": "telethon.network.connection.tcpobfuscated.ConnectionTcpObfuscated",
+            "abridged": (
+                "telethon.network.connection.tcpabridged.ConnectionTcpAbridged"
+            ),
+            "intermediate": (
+                "telethon.network.connection.tcpintermediate.ConnectionTcpIntermediate"
+            ),
+            "obfuscated": (
+                "telethon.network.connection.tcpobfuscated.ConnectionTcpObfuscated"
+            ),
         }
         transports = {}
         for name, full_path in _TRANSPORT_MODULES.items():

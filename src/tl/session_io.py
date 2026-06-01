@@ -4,7 +4,7 @@ import json
 import os
 import sqlite3
 import typing
-from typing import TYPE_CHECKING, Optional, Type, Union
+from typing import TYPE_CHECKING
 
 from ..api import API, APIData, CreateNewSession, LoginFlag, UseCurrentSession
 from ..exception import (
@@ -41,16 +41,17 @@ def write_session_file(
     c = conn.cursor()
     c.execute("CREATE TABLE IF NOT EXISTS version (version integer primary key)")
     c.execute("DELETE FROM version")
-    c.execute("INSERT INTO version VALUES (7)")
+    c.execute("INSERT INTO version VALUES (8)")
     c.execute(
         "CREATE TABLE IF NOT EXISTS sessions ("
         "dc_id integer primary key, server_address text, "
-        "port integer, auth_key blob, takeout_id integer)"
+        "port integer, auth_key blob, takeout_id integer, "
+        "tmp_auth_key blob)"
     )
     c.execute("DELETE FROM sessions")
     c.execute(
-        "INSERT INTO sessions VALUES (?, ?, ?, ?, ?)",
-        (dc_id, server_address, port, auth_key_bytes, None),
+        "INSERT INTO sessions VALUES (?, ?, ?, ?, ?, ?)",
+        (dc_id, server_address, port, auth_key_bytes, None, None),
     )
     c.execute(
         "CREATE TABLE IF NOT EXISTS entities ("
@@ -75,10 +76,10 @@ def write_session_file(
 
 async def from_session_json(
     session_path: str,
-    json_path: Optional[str] = None,
-    flag: Type[LoginFlag] = UseCurrentSession,
-    password: Optional[str] = None,
-    **kwargs,
+    json_path: str | None = None,
+    flag: type[LoginFlag] = UseCurrentSession,
+    password: str | None = None,
+    **kwargs: object,
 ) -> TelegramClient:
     from .telethon import TelegramClient
 
@@ -101,7 +102,7 @@ async def from_session_json(
     )
 
     try:
-        with open(json_file, "r", encoding="utf-8") as f:
+        with open(json_file, encoding="utf-8") as f:
             data = json.load(f)
     except (json.JSONDecodeError, UnicodeDecodeError) as e:
         raise SessionFileInvalid(f"Invalid JSON file: {e}")
@@ -123,16 +124,21 @@ async def from_session_json(
             client.UserId = user_id
         return client
 
-    await client.connect()
-    return await client.QRLoginToNewClient(api=api_data, password=password, **kwargs)
+    try:
+        await client.connect()
+        return await client.QRLoginToNewClient(
+            api=api_data, password=password, **kwargs
+        )
+    finally:
+        await TelegramClient._disconnect_client(client, close_session=True)
 
 
 async def save_session_json(
     client: TelegramClient,
     session_path: str,
-    api: Optional[Union[Type[APIData], APIData]] = None,
+    api: type[APIData] | APIData | None = None,
     fetch_user_info: bool = False,
-) -> typing.Tuple[str, str]:
+) -> tuple[str, str]:
     base = _normalize_base_path(session_path)
     session_file = base + ".session"
     json_file = base + ".json"
@@ -174,13 +180,13 @@ async def save_session_json(
 
 
 def _resolve_api_data(
-    api: Union[Type[APIData], APIData, None],
+    api: type[APIData] | APIData | None,
     client: TelegramClient,
 ) -> APIData:
     if api is not None:
         if isinstance(api, APIData):
             return api
-        if isinstance(api, type) and APIData.__subclasscheck__(api):
+        if isinstance(api, type) and issubclass(api, APIData):
             return api()
     if client._api_data is not None:
         return client._api_data

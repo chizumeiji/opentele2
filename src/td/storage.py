@@ -1,20 +1,24 @@
 from __future__ import annotations
 
-from ..utils import APP_VERSION, BaseObject, TDF_MAGIC
+import hashlib
+import os
+from ctypes import c_uint32 as uint32
+from ctypes import c_ushort as ushort
+from ctypes import sizeof
+
+import tgcrypto
+
 from ..exception import (
     Expects,
     ExpectStreamStatus,
     OpenTeleException,
-    TDataBadDecryptKey,
     TDataBadDecryptedDataSize,
+    TDataBadDecryptKey,
     TDataBadEncryptedDataSize,
     TDataInvalidCheckSum,
     TDataInvalidMagic,
     TFileNotFound,
 )
-from .configs import DcId, FileKey, ShiftedDcId, dbi
-from . import shared as td
-from ctypes import sizeof, c_uint32 as uint32, c_ushort as ushort
 from ..qt_compat import (
     QBuffer,
     QByteArray,
@@ -24,11 +28,9 @@ from ..qt_compat import (
     QIODevice,
     QSysInfo,
 )
-import typing
-
-import hashlib
-import os
-import tgcrypto
+from ..utils import APP_VERSION, TDF_MAGIC, BaseObject
+from . import shared as td
+from .configs import DcId, FileKey, ShiftedDcId, dbi
 
 _AES_BLOCK_SIZE = 0x10
 _AES_BLOCK_MASK = 0x0F
@@ -39,15 +41,15 @@ _TDF_FILE_SUFFIXES = ("s", "1", "0")
 
 class Serialize(BaseObject):
     @staticmethod
-    def bytearraySize(arr: QByteArray):
+    def bytearraySize(arr: QByteArray) -> int:
         return sizeof(uint32) + arr.size()
 
     @staticmethod
-    def bytesSize(arr: bytes):
+    def bytesSize(arr: bytes) -> int:
         return sizeof(uint32) + len(arr)
 
     @staticmethod
-    def stringSize(arr: str):
+    def stringSize(arr: str) -> int:
         return sizeof(uint32) + len(arr) + sizeof(ushort)
 
 
@@ -62,7 +64,7 @@ class Storage(BaseObject):
             self.fallbackConfigLegacyStickersRecentLimit = 0
             self.fallbackConfigLegacyStickersFavedLimit = 0
             self.fallbackConfigLegacyMegagroupSizeMax = 0
-            self.fallbackConfigLegacyTxtDomainString = str()
+            self.fallbackConfigLegacyTxtDomainString = ""
             self.fallbackConfig = QByteArray()
 
             self.cacheTotalSizeLimit = 0
@@ -85,7 +87,7 @@ class Storage(BaseObject):
             self.languagesKey = FileKey(0)
 
             self.mtpAuthorization = QByteArray()
-            self.mtpLegacyKeys: typing.List[td.AuthKey] = []
+            self.mtpLegacyKeys: list[td.AuthKey] = []
 
             self.mtpLegacyMainDcId = 0
             self.mtpLegacyUserId = 0
@@ -103,7 +105,7 @@ class Storage(BaseObject):
             return self.__data
 
         @data.setter
-        def data(self, value):
+        def data(self, value: QByteArray) -> None:
             self.__data = value
 
         @property
@@ -111,7 +113,7 @@ class Storage(BaseObject):
             return self.__version
 
         @version.setter
-        def version(self, value):
+        def version(self, value: int) -> None:
             self.__version = value
 
         @property
@@ -123,7 +125,7 @@ class Storage(BaseObject):
             return self.__stream
 
     class EncryptedDescriptor(BaseObject):
-        def __init__(self, size: typing.Optional[int] = None) -> None:
+        def __init__(self, size: int | None = None) -> None:
             self.__data = QByteArray()
             self.__buffer = QBuffer()
             self.__stream = QDataStream()
@@ -150,7 +152,7 @@ class Storage(BaseObject):
             return self.__data
 
         @data.setter
-        def data(self, value):
+        def data(self, value: QByteArray) -> None:
             self.__data = value
 
         @property
@@ -168,7 +170,7 @@ class Storage(BaseObject):
             self.sync = sync
             self._init(fileName)
 
-        def _init(self, fileName: str):
+        def _init(self, fileName: str) -> None:
             self.base = Storage.PathJoin(self.basePath, fileName)
             self.safeData = QByteArray()
             self.buffer = QBuffer()
@@ -180,10 +182,10 @@ class Storage(BaseObject):
             self.stream = QDataStream()
             self.stream.setDevice(self.buffer)
 
-            self.md5 = bytes()
+            self.md5 = b""
             self.fullSize = 0
 
-        def writeData(self, data: QByteArray):
+        def writeData(self, data: QByteArray) -> None:
             Expects(self.stream.device() is not None, "stream.device is missing")
 
             self.stream << data
@@ -201,10 +203,12 @@ class Storage(BaseObject):
             self.md5 += data.data()
             self.fullSize += 4 + data.size()
 
-        def writeEncrypted(self, data: Storage.EncryptedDescriptor, key: td.AuthKey):
+        def writeEncrypted(
+            self, data: Storage.EncryptedDescriptor, key: td.AuthKey
+        ) -> None:
             self.writeData(Storage.PrepareEncrypted(data, key))
 
-        def finish(self):
+        def finish(self) -> None:
             if not self.stream.device():
                 return
             self.stream.setDevice(None)
@@ -250,7 +254,7 @@ class Storage(BaseObject):
         return encrypted
 
     @staticmethod
-    def WriteFile(fileName: str, basePath: str, data: bytes):
+    def WriteFile(fileName: str, basePath: str, data: bytes) -> bool:
         dir = QDir(basePath)
         if not dir.exists():
             dir.mkpath(basePath)
@@ -267,7 +271,7 @@ class Storage(BaseObject):
 
     @staticmethod
     def ReadFile(fileName: str, basePath: str) -> FileReadDescriptor:
-        tries_exception: typing.Optional[OpenTeleException] = None
+        tries_exception: OpenTeleException | None = None
         for suffix in _TDF_FILE_SUFFIXES:
             try:
                 file = QFile(Storage.PathJoin(basePath, fileName + suffix))
@@ -297,7 +301,8 @@ class Storage(BaseObject):
 
                 if check_md5_hash.hexdigest() != md5.hex():
                     tries_exception = TDataInvalidCheckSum(
-                        f"Invalid checksum {check_md5_hash.hexdigest()} in file {fileName}"
+                        "Invalid checksum "
+                        f"{check_md5_hash.hexdigest()} in file {fileName}"
                     )
                     file.close()
                     continue
@@ -315,7 +320,7 @@ class Storage(BaseObject):
 
                 file.close()
                 return result
-            except IOError:
+            except OSError:
                 pass
 
         raise (
@@ -368,7 +373,7 @@ class Storage(BaseObject):
 
     @staticmethod
     def ReadSetting(
-        blockId: int, stream: QDataStream, version: int, context: ReadSettingsContext
+        blockId: int, stream: QDataStream, _version: int, context: ReadSettingsContext
     ) -> bool:
         if blockId == dbi.DcOptionOldOld:
             dcId = DcId(stream.readUInt32())
@@ -378,7 +383,7 @@ class Storage(BaseObject):
             ExpectStreamStatus(stream)
 
             context.fallbackConfigLegacyDcOptions.constructAddOne(
-                dcId, td.MTP.DcOptions.Flag(0), ip, port, bytes()
+                dcId, td.MTP.DcOptions.Flag(0), ip, port, b""
             )
             context.legacyRead = True
 
@@ -390,7 +395,7 @@ class Storage(BaseObject):
             ExpectStreamStatus(stream)
 
             context.fallbackConfigLegacyDcOptions.constructAddOne(
-                dcIdWithShift, flags, ip, port, bytes()
+                dcIdWithShift, flags, ip, port, b""
             )
             context.legacyRead = True
 
@@ -508,7 +513,9 @@ class Storage(BaseObject):
             or (dataLen < 4)
         ):
             raise TDataBadDecryptedDataSize(
-                f"Bad decrypted part size: {encryptedSize}, fullLen: {fullLen}, decrypted size: {len(decrypted)}"
+                "Bad decrypted part size: "
+                f"{encryptedSize}, fullLen: {fullLen}, "
+                f"decrypted size: {len(decrypted)}"
             )
 
         decrypted.resize(dataLen)
@@ -524,7 +531,7 @@ class Storage(BaseObject):
         return result
 
     @staticmethod
-    def ComposeDataString(dataName: str, index: int):
+    def ComposeDataString(dataName: str, index: int) -> str:
         result = dataName.replace("#", "")
         if index > 0:
             result += f"#{index + 1}"
@@ -536,8 +543,8 @@ class Storage(BaseObject):
         return int.from_bytes(md5, "little")
 
     @staticmethod
-    def ToFilePart(val: int):
-        result = str()
+    def ToFilePart(val: int) -> str:
+        result = ""
         for i in range(0x10):
             v = val & 0xF
             if v < 0x0A:
@@ -552,7 +559,7 @@ class Storage(BaseObject):
         return QByteArray(os.urandom(size))
 
     @staticmethod
-    def GetAbsolutePath(path: typing.Optional[str] = None) -> str:
+    def GetAbsolutePath(path: str | None = None) -> str:
         if path is None or path == "":
             path = os.getcwd()
         return os.path.abspath(path)

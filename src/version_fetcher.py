@@ -1,30 +1,73 @@
 from __future__ import annotations
 
+import html
 import json
 import logging
 import os
+import re
+import urllib.parse
 import urllib.request
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Callable, Dict, List
 
 __all__ = ["fetch_all_versions"]
 
 logger = logging.getLogger(__name__)
 
 _TIMEOUT = 10
-_CACHED: Dict[str, object] | None = None
+_CACHED: dict[str, object] | None = None
+
+_TG_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/148.0.0.0 Safari/537.36"
+)
 
 
-def _fetch_url(url: str) -> str:
+def _fetch_url(url: str, *, headers: dict[str, str] | None = None) -> str:
     req = urllib.request.Request(
         url,
-        headers={
+        headers=headers
+        or {
             "User-Agent": "opentele2",
             "Accept": "application/json, text/plain, */*",
         },
     )
     with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
         return resp.read().decode("utf-8")
+
+
+def _fetch_tg_page(query: str) -> str:
+    return _fetch_url(
+        f"https://t.me/s/tgstable?q={urllib.parse.quote(query)}",
+        headers={
+            "User-Agent": _TG_UA,
+            "Accept": "text/html,application/xhtml+xml,*/*;q=0.8",
+        },
+    )
+
+
+def _parse_tg_messages(html_text: str) -> list[dict]:
+    results: list[dict] = []
+    version_pattern = re.compile(
+        r"New\s+version\s*:\s*([^\s\(\)]+)(?:\s*\((\d+)\))?",
+        re.IGNORECASE,
+    )
+    for m in re.finditer(
+        r'<div[^>]*class="tgme_widget_message_text"[^>]*>(.*?)</div>',
+        html_text,
+        re.DOTALL,
+    ):
+        text = html.unescape(re.sub(r"<[^>]+>", "", m.group(1)).strip())
+        vm = version_pattern.search(text)
+        if vm:
+            results.append(
+                {
+                    "version": vm.group(1),
+                    "build_code": int(vm.group(2)) if vm.group(2) else None,
+                }
+            )
+    return results
 
 
 def _fetch_tdesktop() -> dict:
@@ -38,6 +81,18 @@ def _fetch_tdesktop() -> dict:
 
 
 def _fetch_android() -> dict:
+    try:
+        html_text = _fetch_tg_page("android versions:")
+        posts = _parse_tg_messages(html_text)
+        if posts:
+            latest = posts[0]
+            result: dict = {"android_app_version": latest["version"]}
+            if latest["build_code"] is not None:
+                result["android_app_version_code"] = latest["build_code"]
+            return result
+    except Exception as exc:
+        logger.debug("TG android version fetch failed: %s", exc)
+
     data = json.loads(
         _fetch_url("https://play.rajkumaar.co.in/json?id=org.telegram.messenger")
     )
@@ -55,11 +110,41 @@ def _fetch_telegram_x() -> dict:
 
 
 def _fetch_ios() -> dict:
+    try:
+        html_text = _fetch_tg_page("ios versions:")
+        posts = _parse_tg_messages(html_text)
+        if posts:
+            latest = posts[0]
+            result: dict = {"ios_app_version": latest["version"]}
+            if latest["build_code"] is not None:
+                result["ios_build_number"] = latest["build_code"]
+            return result
+    except Exception as exc:
+        logger.debug("TG ios version fetch failed: %s", exc)
+
     data = json.loads(_fetch_url("https://itunes.apple.com/lookup?id=686449807"))
     return {"ios_app_version": data["results"][0]["version"]}
 
 
 def _fetch_macos() -> dict:
+    try:
+        data = json.loads(_fetch_url("https://formulae.brew.sh/api/cask/telegram.json"))
+        raw_version: str = data.get("version", "")
+        if raw_version and "," in raw_version:
+            parts = raw_version.split(",", 1)
+            version = parts[0].strip()
+            build_code = parts[1].strip()
+            return {
+                "macos_app_version": version,
+                "macos_build_number": int(build_code)
+                if build_code.isdigit()
+                else build_code,
+            }
+        if raw_version:
+            return {"macos_app_version": raw_version}
+    except Exception as exc:
+        logger.debug("Homebrew macos version fetch failed: %s", exc)
+
     data = json.loads(_fetch_url("https://itunes.apple.com/lookup?id=747648890"))
     return {"macos_app_version": data["results"][0]["version"]}
 
@@ -68,7 +153,17 @@ def _fetch_web_k() -> dict:
     content = _fetch_url(
         "https://raw.githubusercontent.com/morethanwords/tweb/master/public/version"
     ).strip()
-    version = content.split("(")[0].strip() if "(" in content else content
+    lines = [line.strip() for line in content.splitlines() if line.strip()]
+    version_line = ""
+    for line in lines:
+        if not line.startswith(("<<<", "===", ">>>")):
+            version_line = line
+            break
+    if not version_line and lines:
+        version_line = lines[0]
+    version = (
+        version_line.split("(")[0].strip() if "(" in version_line else version_line
+    )
     return {"web_k_version": f"{version} K"}
 
 
@@ -82,7 +177,7 @@ def _fetch_web_a() -> dict:
     }
 
 
-_FETCHERS: List[Callable[[], dict]] = [
+_FETCHERS: list[Callable[[], dict]] = [
     _fetch_tdesktop,
     _fetch_android,
     _fetch_telegram_x,
@@ -93,7 +188,7 @@ _FETCHERS: List[Callable[[], dict]] = [
 ]
 
 
-def fetch_all_versions(timeout: float = _TIMEOUT) -> Dict[str, object]:
+def fetch_all_versions(timeout: float = _TIMEOUT) -> dict[str, object]:
     global _CACHED
     if _CACHED is not None:
         return _CACHED
@@ -102,7 +197,7 @@ def fetch_all_versions(timeout: float = _TIMEOUT) -> Dict[str, object]:
         _CACHED = {}
         return _CACHED
 
-    result: Dict[str, object] = {}
+    result: dict[str, object] = {}
     try:
         with ThreadPoolExecutor(max_workers=len(_FETCHERS)) as pool:
             futures = {pool.submit(fn): fn.__name__ for fn in _FETCHERS}

@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from ..utils import BaseObject
+from typing import ClassVar
+
 from ..exception import Expects
-
-from typing import ClassVar, List, Union
-
+from ..utils import BaseObject
 
 __all__ = [
     "BareId",
@@ -63,16 +62,16 @@ class PeerId(int):
     _LEGACY_CHANNEL_SHIFT = 0x200000000
     _LEGACY_FAKE_SHIFT = 0xF00000000
 
-    def __init__(self, value) -> None:
+    def __init__(self, value: int) -> None:
         self.value = value
 
-    def Serialize(self):
+    def Serialize(self) -> int:
         Expects(not (self.value & (UserId.kReservedBit << self._RESERVED_BIT_SHIFT)))
         return self.value | (UserId.kReservedBit << self._RESERVED_BIT_SHIFT)
 
     @staticmethod
     def FromChatIdType(
-        id: Union[UserId, ChatId, ChannelId, FakeChatId],
+        id: UserId | ChatId | ChannelId | FakeChatId,
     ) -> PeerId:
         return PeerId(id.bare | (BareId(id.kShift) << PeerId._RESERVED_BIT_SHIFT))
 
@@ -114,7 +113,7 @@ class DcId(int):
     _5: DcId = 5
 
     @staticmethod
-    def BareDcId(shiftedDcId: Union[ShiftedDcId, DcId]) -> DcId:
+    def BareDcId(shiftedDcId: ShiftedDcId | DcId) -> DcId:
         return DcId(shiftedDcId % DcId.kDcShift)
 
 
@@ -125,12 +124,12 @@ class ShiftedDcId(DcId):
 
 
 class BuiltInDc(BaseObject):
-    kBuiltInDcs: ClassVar[List[BuiltInDc]]
-    kBuiltInDcsIPv6: ClassVar[List[BuiltInDc]]
-    kBuiltInDcsTest: ClassVar[List[BuiltInDc]]
-    kBuiltInDcsIPv6Test: ClassVar[List[BuiltInDc]]
+    kBuiltInDcs: ClassVar[list[BuiltInDc]]
+    kBuiltInDcsIPv6: ClassVar[list[BuiltInDc]]
+    kBuiltInDcsTest: ClassVar[list[BuiltInDc]]
+    kBuiltInDcsIPv6Test: ClassVar[list[BuiltInDc]]
 
-    def __init__(self, id: DcId, ip: str, port: int):
+    def __init__(self, id: DcId, ip: str, port: int) -> None:
         self.id = id
         self.ip = ip
         self.port = port
@@ -287,6 +286,11 @@ class lskType(int):
     lskCustomEmojiKeys = 0x17
     lskSearchSuggestions = 0x18
     lskWebviewTokens = 0x19
+    lskRoundPlaceholder = 0x1A
+    lskInlineBotsDownloads = 0x1B
+    lskMediaLastPlaybackPositions = 0x1C
+    lskBotStorages = 0x1D
+    lskPrefs = 0x1E
 
 
 class BotTrustFlag(int):

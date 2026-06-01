@@ -1,36 +1,51 @@
-from ..exception import *  # noqa: F403
-from ..utils import *  # noqa: F403
-from ..api import (
-    APIData as APIData,
-    API as API,
-    LoginFlag as LoginFlag,
-    CreateNewSession as CreateNewSession,
-    UseCurrentSession as UseCurrentSession,
-)
-from .. import td as td
-
+import asyncio as asyncio
+from collections.abc import Callable as Callable
+from ctypes import sizeof as sizeof
 from typing import (
-    Union as Union,
-    Callable as Callable,
-    TypeVar as TypeVar,
-    Type as Type,
-    List as List,
-    Dict as Dict,
-    Any as Any,
     TYPE_CHECKING as TYPE_CHECKING,
 )
-from ctypes import sizeof as sizeof
+from typing import (
+    Any as Any,
+)
+from typing import (
+    TypeVar as TypeVar,
+)
+from typing import (
+    Union as Union,
+)
 
 import telethon as telethon
-from telethon.sessions import StringSession as StringSession
+from telethon import functions as functions
+from telethon import tl as tl
+from telethon import types as types
+from telethon import utils as utils
 from telethon.crypto import AuthKey as AuthKey
-from telethon import tl as tl, functions as functions, types as types, utils as utils
-
 from telethon.network.connection.connection import Connection as Connection
 from telethon.network.connection.tcpfull import ConnectionTcpFull as ConnectionTcpFull
-
+from telethon.sessions import StringSession as StringSession
 from telethon.sessions.abstract import Session as Session
-from telethon.sessions.sqlite import SQLiteSession as SQLiteSession
 from telethon.sessions.memory import MemorySession as MemorySession
+from telethon.sessions.sqlite import SQLiteSession as SQLiteSession
 
-import asyncio as asyncio
+from .. import td as td
+from ..api import (
+    API as API,
+)
+from ..api import (
+    APIData as APIData,
+)
+from ..api import (
+    CreateNewSession as CreateNewSession,
+)
+from ..api import (
+    LoginFlag as LoginFlag,
+)
+from ..api import (
+    UseCurrentSession as UseCurrentSession,
+)
+from ..exception import *  # noqa: F403
+from ..utils import *  # noqa: F403
+
+Dict = dict
+List = list
+Type = type

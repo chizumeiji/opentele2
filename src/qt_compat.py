@@ -6,6 +6,8 @@ import struct
 import sys
 import typing
 
+BufferInput = bytes | bytearray | memoryview | typing.Iterable[int]
+
 
 class QIODevice:
     class OpenModeFlag:
@@ -21,7 +23,7 @@ class QIODevice:
 class QByteArray:
     __slots__ = ("_data", "_null")
 
-    def __init__(self, data=None):
+    def __init__(self, data: QByteArray | BufferInput | int | None = None) -> None:
         if data is None:
             self._data = bytearray()
             self._null = True
@@ -68,25 +70,25 @@ class QByteArray:
         self._data.clear()
         self._null = True
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: int | slice) -> int | QByteArray:
         result = self._data[key]
         if isinstance(key, slice):
             return QByteArray(result)
         return result
 
-    def __add__(self, other) -> QByteArray:
+    def __add__(self, other: QByteArray | bytes | bytearray) -> QByteArray:
         if isinstance(other, QByteArray):
             return QByteArray(self._data + other._data)
         if isinstance(other, (bytes, bytearray)):
             return QByteArray(self._data + other)
         return NotImplemented
 
-    def __radd__(self, other) -> QByteArray:
+    def __radd__(self, other: QByteArray | bytes | bytearray) -> QByteArray:
         if isinstance(other, (bytes, bytearray)):
             return QByteArray(other + self._data)
         return NotImplemented
 
-    def __iadd__(self, other) -> QByteArray:
+    def __iadd__(self, other: QByteArray | bytes | bytearray) -> QByteArray:
         if isinstance(other, QByteArray):
             self._data.extend(other._data)
         elif isinstance(other, (bytes, bytearray)):
@@ -102,14 +104,14 @@ class QByteArray:
     def __bool__(self) -> bool:
         return len(self._data) > 0
 
-    def __eq__(self, other) -> bool:
+    def __eq__(self, other: object) -> bool:
         if isinstance(other, QByteArray):
             return self._data == other._data
         if isinstance(other, (bytes, bytearray)):
             return bytes(self._data) == bytes(other)
         return NotImplemented
 
-    def __ne__(self, other) -> bool:
+    def __ne__(self, other: object) -> bool:
         result = self.__eq__(other)
         if result is NotImplemented:
             return result
@@ -123,22 +125,22 @@ class QByteArray:
 
     if sys.version_info >= (3, 12):
 
-        def __buffer__(self, flags):
+        def __buffer__(self, flags: int) -> memoryview:
             return memoryview(self._data)
 
 
 class QBuffer:
     def __init__(self) -> None:
-        self._buffer: typing.Optional[QByteArray] = None
+        self._buffer: QByteArray | None = None
         self._pos: int = 0
         self._open: bool = False
         self._mode = QIODevice.OpenModeFlag.NotOpen
 
-    def setBuffer(self, buf: typing.Optional[QByteArray]) -> None:
+    def setBuffer(self, buf: QByteArray | None) -> None:
         self._buffer = buf
         self._pos = 0
 
-    def open(self, mode) -> bool:
+    def open(self, mode: int) -> bool:
         if self._buffer is None:
             return False
         self._open = True
@@ -176,7 +178,7 @@ class QBuffer:
         self._pos += len(data)
         return data
 
-    def write(self, data) -> int:
+    def write(self, data: QByteArray | BufferInput) -> int:
         if self._buffer is None:
             return -1
         if isinstance(data, QByteArray):
@@ -212,11 +214,13 @@ class QDataStream:
     class Version:
         Qt_5_1 = 16
 
-    def __init__(self, data: typing.Any = None, mode: typing.Any = None) -> None:
-        self._device: typing.Optional[QBuffer] = None
+    def __init__(
+        self, data: QByteArray | QBuffer | None = None, mode: int | None = None
+    ) -> None:
+        self._device: QBuffer | None = None
         self._status: int = QDataStream.Status.Ok
         self._version: int = 0
-        self._internal_buffer: typing.Optional[QBuffer] = None
+        self._internal_buffer: QBuffer | None = None
 
         if data is not None and isinstance(data, QByteArray):
             self._internal_buffer = QBuffer()
@@ -229,10 +233,10 @@ class QDataStream:
         elif data is not None and isinstance(data, QBuffer):
             self._device = data
 
-    def setDevice(self, device: typing.Optional[QBuffer]) -> None:
+    def setDevice(self, device: QBuffer | None) -> None:
         self._device = device
 
-    def device(self) -> typing.Optional[QBuffer]:
+    def device(self) -> QBuffer | None:
         return self._device
 
     def setVersion(self, v: int) -> None:
@@ -273,13 +277,15 @@ class QDataStream:
             self._status = QDataStream.Status.WriteFailed
         return result
 
-    def _read_numeric(self, size: int, fmt: str, default=0):
+    def _read_numeric(
+        self, size: int, fmt: str, default: int | float = 0
+    ) -> int | float:
         data = self._read(size)
         if len(data) < size:
             return default
         return struct.unpack(fmt, data)[0]
 
-    def _write_numeric(self, fmt: str, value) -> None:
+    def _write_numeric(self, fmt: str, value: int | float) -> None:
         self._write(struct.pack(fmt, value))
 
     def readInt8(self) -> int:
@@ -360,7 +366,7 @@ class QDataStream:
     def readRawData(self, length: int) -> bytes:
         return self._read(length)
 
-    def writeRawData(self, data) -> int:
+    def writeRawData(self, data: QByteArray | BufferInput) -> int:
         if isinstance(data, QByteArray):
             raw = bytes(data._data)
         elif isinstance(data, (bytes, bytearray, memoryview)):
@@ -379,7 +385,7 @@ class QDataStream:
         raw = self._read(length)
         return raw.decode("utf-16-be")
 
-    def writeQString(self, s: typing.Optional[str]) -> None:
+    def writeQString(self, s: str | None) -> None:
         if s is None:
             self._write(struct.pack(">I", 0xFFFFFFFF))
             return
@@ -420,11 +426,11 @@ class QDataStream:
 
 
 class QFile:
-    def __init__(self, path: str):
+    def __init__(self, path: str) -> None:
         self._path = path
-        self._file: typing.Optional[typing.IO[bytes]] = None
+        self._file: typing.IO[bytes] | None = None
 
-    def open(self, mode) -> bool:
+    def open(self, mode: int) -> bool:
         try:
             if mode == QIODevice.OpenModeFlag.ReadOnly:
                 self._file = builtins.open(self._path, "rb")
@@ -433,7 +439,7 @@ class QFile:
             else:
                 self._file = builtins.open(self._path, "r+b")
             return True
-        except (IOError, OSError):
+        except OSError:
             return False
 
     def read(self, n: int) -> bytes:
@@ -441,7 +447,7 @@ class QFile:
             return b""
         return self._file.read(n)
 
-    def write(self, data) -> int:
+    def write(self, data: QByteArray | BufferInput) -> int:
         if self._file is None:
             return -1
         if isinstance(data, QByteArray):
@@ -471,7 +477,7 @@ class QFile:
 
 
 class QDir:
-    def __init__(self, path: str):
+    def __init__(self, path: str) -> None:
         self._path = path
 
     def exists(self) -> bool:

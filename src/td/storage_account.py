@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from ctypes import sizeof, c_uint32 as uint32
-from typing import Optional, TYPE_CHECKING
-
-from ..qt_compat import QByteArray
+from ctypes import c_uint32 as uint32
+from ctypes import sizeof
+from typing import TYPE_CHECKING
 
 from ..exception import (
     AccountAuthKeyNotFound,
@@ -12,9 +11,10 @@ from ..exception import (
     OpenTeleException,
     TDataInvalidMagic,
 )
+from ..qt_compat import QByteArray
 from ..utils import BaseObject
-from .configs import dbi
 from . import shared as td
+from .configs import dbi
 from .map_data import MapData
 
 if TYPE_CHECKING:
@@ -30,7 +30,7 @@ class StorageAccount(BaseObject):  # nocov
         self.__basePath = td.Storage.PathJoin(
             self.__baseGlobalPath, td.Storage.ToFilePart(self.__dataNameKey)
         )
-        self.__localKey: Optional[td.AuthKey] = None
+        self.__localKey: td.AuthKey | None = None
         self.__mapData = MapData(self.basePath)
         self.__config = td.MTP.Config(td.MTP.Environment.Production)
 
@@ -39,11 +39,11 @@ class StorageAccount(BaseObject):  # nocov
         return self.__owner
 
     @property
-    def localKey(self) -> Optional[td.AuthKey]:
+    def localKey(self) -> td.AuthKey | None:
         return self.__localKey
 
     @localKey.setter
-    def localKey(self, value):
+    def localKey(self, value: td.AuthKey | None) -> None:
         self.__localKey = value
 
     @property
@@ -51,7 +51,7 @@ class StorageAccount(BaseObject):  # nocov
         return self.__keyFile
 
     @keyFile.setter
-    def keyFile(self, value):
+    def keyFile(self, value: str) -> None:
         self.__keyFile = value
         self.__dataNameKey = td.Storage.ComputeDataNameKey(self.__keyFile)
         self.baseGlobalPath = self.baseGlobalPath
@@ -61,7 +61,7 @@ class StorageAccount(BaseObject):  # nocov
         return self.__baseGlobalPath
 
     @baseGlobalPath.setter
-    def baseGlobalPath(self, basePath):
+    def baseGlobalPath(self, basePath: str) -> None:
         self.__baseGlobalPath = td.Storage.GetAbsolutePath(basePath)
         self.__basePath = td.Storage.PathJoin(
             self.__baseGlobalPath, td.Storage.ToFilePart(self.__dataNameKey)
@@ -88,7 +88,7 @@ class StorageAccount(BaseObject):  # nocov
             else self._readMtpConfig()
         )
 
-    def _readMtpData(self):
+    def _readMtpData(self) -> None:
         mtp = td.Storage.ReadEncryptedFile(
             td.Storage.ToFilePart(self.__dataNameKey),
             self.__baseGlobalPath,
@@ -122,7 +122,7 @@ class StorageAccount(BaseObject):  # nocov
 
     def _readMapWith(
         self, localKey: td.AuthKey, legacyPasscode: QByteArray = QByteArray()
-    ):
+    ) -> bool | None:
         try:
             self.__mapData.read(localKey, legacyPasscode)
         except OpenTeleException:
@@ -172,7 +172,7 @@ class StorageAccount(BaseObject):  # nocov
         mtp.writeEncrypted(data, self.localKey)  # type: ignore
         mtp.finish()
 
-    def _writeData(self, baseGlobalPath: str, keyFile: Optional[str] = None) -> None:
+    def _writeData(self, baseGlobalPath: str, keyFile: str | None = None) -> None:
         Expects(
             baseGlobalPath is not None and baseGlobalPath != "",
             "baseGlobalPath can't be empty",

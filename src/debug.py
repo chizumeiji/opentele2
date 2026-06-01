@@ -1,6 +1,7 @@
-import time
-import atexit
+from __future__ import annotations
 
+import atexit
+import time
 import typing as t
 
 IS_DEBUG_MODE = False
@@ -8,15 +9,15 @@ IS_DEBUG_MODE = False
 if IS_DEBUG_MODE:
     from rich import print
 
-    _F = t.TypeVar("_F")
+    _F = t.TypeVar("_F", bound=t.Callable[..., object])
     _T = t.TypeVar("_T")
     _R = t.TypeVar("_R")
 
-    class DebugInfo(object):
+    class DebugInfo:
         def __init__(self) -> None:
-            self.list: t.List[t.Any] = []
+            self.list: list[tuple[str, int, float, float]] = []
 
-        def add(self, name, total_called, total_time) -> None:
+        def add(self, name: str, total_called: int, total_time: float) -> None:
             self.list.append(
                 (
                     name,
@@ -26,7 +27,7 @@ if IS_DEBUG_MODE:
                 )
             )
 
-        def on_exit(self):
+        def on_exit(self) -> None:
             self.list = sorted(self.list, key=lambda item: item[3])
 
             for item in self.list:
@@ -43,18 +44,18 @@ if IS_DEBUG_MODE:
     atexit.register(dbgInfo.on_exit)
 
     class DebugMethod(type):
-        def __get__(self, obj, cls):
+        def __get__(self, obj: object | None, cls: type[object] | None) -> DebugMethod:
             self.__owner__ = obj if obj else cls
             return self
 
-        def __call2__(self, *args, **kwargs):
+        def __call2__(self, *args: object, **kwargs: object) -> tuple[object, float]:
             begin = time.perf_counter()
             result = self.__fget__(*args, **kwargs)
             diff = time.perf_counter() - begin
 
             return result, diff
 
-        def __call__(self, *args, **kwargs) -> t.Any:
+        def __call__(self, *args: object, **kwargs: object) -> object:
             if hasattr(self, "__owner__"):
                 result, diff = DebugMethod.__call2__(
                     self, self.__owner__, *args, **kwargs
@@ -67,7 +68,7 @@ if IS_DEBUG_MODE:
 
             return result
 
-        def __getfullname(self):
+        def __getfullname(self) -> str:
             if hasattr(self, "__ownername__"):
                 if self.__fname__ == "__init__":
                     return f"{self.__ownername__}()"
@@ -76,7 +77,7 @@ if IS_DEBUG_MODE:
             else:
                 return f"{self.__fget__.__name__}()"
 
-        def on_exit(self):
+        def on_exit(self) -> None:
             if self.__total_called > 0:
                 dbgInfo.add(
                     DebugMethod.__getfullname(self),
@@ -84,14 +85,14 @@ if IS_DEBUG_MODE:
                     self.__total_time,
                 )
 
-        def __set_name__(self, owner, name):
-            self.__owner__: str = owner
-            self.__ownername__: str = owner.__name__
-            self.__fname__: str = name
+        def __set_name__(self, owner: type[object], name: str) -> None:
+            self.__owner__ = owner
+            self.__ownername__ = owner.__name__
+            self.__fname__ = name
             if self.__fname__.startswith(f"_{self.__ownername__}__"):
                 self.__fname__ = self.__fname__[len(self.__ownername__) + 1 :]
 
-        def __new__(cls, decorated_func: _F) -> _F:
+        def __new__(cls, decorated_func: _F) -> type[object]:
             firstdct = dict(decorated_func.__dict__)
             for i, x in cls.__dict__.items():
                 firstdct[i] = x
@@ -109,36 +110,34 @@ if IS_DEBUG_MODE:
             atexit.register(result.on_exit, result)
             return result
 
-    def parse_arg(value) -> str:
+    def parse_arg(value: object) -> str:
         if isinstance(value, type):
             return value.__name__
-        elif isinstance(value, str):
+        if isinstance(value, str):
             return f"'{value}'"
-        elif isinstance(value, int):
+        if isinstance(value, int):
             return f"{value}"
-        elif isinstance(value, object):
-            return value.__class__.__name__ + "(...)"
-        return value
+        return value.__class__.__name__ + "(...)"
 
     class runtime(type):
-        def __get__(self, obj, cls):
+        def __get__(self, obj: object | None, cls: type[object] | None) -> runtime:
             self.__owner__ = obj if obj else cls
             return self
 
-        def __call__(self, *args, **kwargs) -> t.Any:
+        def __call__(self, *args: object, **kwargs: object) -> object:
             begin = time.perf_counter()
             result = self.__fget__(self.__owner__, *args, **kwargs)
             diff = round((time.perf_counter() - begin) * 1000, 2)
             print(f"{self.__fname__} took {diff}ms")
             return result
 
-        def __set_name__(self, owner, name):
+        def __set_name__(self, owner: type[object], name: str) -> None:
             print("set_name")
             self.__owner__ = owner
             self.__ownername__ = owner.__name__
             self.__fname__ = name
 
-        def __new__(cls, decorated_func):
+        def __new__(cls, decorated_func: _F) -> type[object]:
             firstdct = dict(decorated_func.__dict__)
             for i, x in cls.__dict__.items():
                 firstdct[i] = x

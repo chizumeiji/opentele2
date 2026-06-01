@@ -1,9 +1,9 @@
 # ruff: noqa: E402
+import atexit
 import os
-import sys
 import pathlib
 import re
-import atexit
+import sys
 
 base_dir = pathlib.Path(__file__).parent.parent.absolute().__str__()
 sys.path.insert(1, base_dir)
@@ -12,14 +12,14 @@ debug_py = os.path.join(base_dir, "src", "debug.py")
 debug_bk_py = os.path.join(base_dir, "src", "debug_bk.py")
 
 
-def on_exit():
+def on_exit() -> None:
     os.remove(debug_py)
     os.rename(debug_bk_py, debug_py)
 
 
-def on_init():
+def on_init() -> None:
     os.rename(debug_py, debug_bk_py)
-    src = open(debug_bk_py, "r")
+    src = open(debug_bk_py)
     dst = open(debug_py, "w")
     content = src.read()
     content = re.sub(r"IS_DEBUG_MODE =(.*)", "IS_DEBUG_MODE = True", content)
@@ -32,29 +32,28 @@ def on_init():
 on_init()
 
 
+import pytest
+from _pytest._io import TerminalWriter
+
+from src.api import API, APIData, UseCurrentSession
 from src.td import TDesktop
 from src.td.account import Account
 from src.tl.telethon import TelegramClient
-from src.api import API, APIData, UseCurrentSession
-
-import pytest
-import typing as t
-from _pytest._io import TerminalWriter
 
 X1 = "!DedInc#opentele"
 X2 = "opentele#DedInc!"
 
 
-def PythonVersion():
-    return "{}.{}".format(sys.version_info.major, sys.version_info.minor)
+def PythonVersion() -> str:
+    return f"{sys.version_info.major}.{sys.version_info.minor}"
 
 
-def profile_path():
-    return "tests/test_profile{}".format(PythonVersion())
+def profile_path() -> str:
+    return f"tests/test_profile{PythonVersion()}"
 
 
-def test_random_api():
-    API_TYPE = t.Union[APIData, t.Type[APIData]]
+def test_random_api() -> None:
+    API_TYPE = APIData | type[APIData]
 
     def cmp(src: API_TYPE, dst: API_TYPE) -> bool:
         return (
@@ -68,7 +67,7 @@ def test_random_api():
             and src.lang_pack == dst.lang_pack
         )
 
-    apis: t.List[API_TYPE] = [
+    apis: list[API_TYPE] = [
         API.TelegramDesktop,
         API.TelegramAndroid,
         API.TelegramAndroidX,
@@ -110,7 +109,7 @@ def test_random_api():
     )
 
 
-async def tdata_to_telethon():
+async def tdata_to_telethon() -> None:
     api_ios = API.TelegramIOS.Generate(X1)
     api_android = API.TelegramAndroid.Generate()
 
@@ -142,7 +141,7 @@ async def tdata_to_telethon():
     await newClient.disconnected
 
 
-async def telethon_from_tdata():
+async def telethon_from_tdata() -> None:
     api_ios = API.TelegramIOS.Generate(X1)
     api_android = API.TelegramAndroid.Generate()
 
@@ -178,7 +177,7 @@ async def telethon_from_tdata():
     await newClient.disconnected
 
 
-async def check_telegramclient():
+async def check_telegramclient() -> None:
     api_ios = API.TelegramIOS.Generate(X1)
 
     tdesk = TDesktop(profile_path(), api_ios, X1, X2)
@@ -221,7 +220,7 @@ async def check_telegramclient():
 
 
 @pytest.mark.asyncio
-async def test_entry_point():
+async def test_entry_point() -> None:
     import asyncio
 
     profile = profile_path()
@@ -235,7 +234,7 @@ async def test_entry_point():
     loop.close = lambda: None
 
     ter.write("\n\n")
-    ter.sep("=", "Begin testing for Python {}".format(PythonVersion()), cyan=True)
+    ter.sep("=", f"Begin testing for Python {PythonVersion()}", cyan=True)
 
     await tdata_to_telethon()
     await telethon_from_tdata()

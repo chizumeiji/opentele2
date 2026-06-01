@@ -7,7 +7,6 @@
 <br><br>
 <a href="https://pypi.org/project/opentele2/"><img alt="pypi version" src="https://img.shields.io/pypi/v/opentele2?logo=pypi&logoColor=%232d93c1"/></a>
 <a href="https://pypi.org/project/opentele2/"><img alt="pypi status" src="https://img.shields.io/pypi/status/opentele2?color=%2331c754&logo=pypi&logoColor=%232d93c1"/></a>
-<a href="https://opentele2.readthedocs.io/"><img alt="documentation" src="https://img.shields.io/readthedocs/opentele2.svg?color=%2331c754&logo=readthedocs"/></a>
 <a href="https://codecov.io/gh/DedInc/opentele2">
 <img src="https://img.shields.io/codecov/c/github/DedInc/opentele2?color=%2331c754&label=codecov&logo=codecov&token=H2IWGEJ5LN"/>
 </a>
@@ -21,84 +20,33 @@
 
 <br>
 
-A **Python Telegram API Library** for converting between **tdata** and **telethon** sessions, with built-in **official Telegram APIs**. [**Read the documentation**](https://opentele2.readthedocs.io/en/latest/documentation/telegram-desktop/tdesktop/).
-
-# A New Era for opentele
-**opentele2** is the rebirth of the original opentele project. The library is now actively maintained and under continued development. We are committed to keeping it up-to-date with the latest versions of Telegram Desktop and Telethon, fixing bugs, and adding new features.
-<br>
-
-## Features
-- Convert [Telegram Desktop](https://github.com/telegramdesktop/tdesktop) **tdata** sessions to [telethon](https://github.com/LonamiWebs/Telethon) sessions and vice versa.
-- Use **telethon** with [official APIs](#authorization) to avoid bot detection.
-- Randomize [device info](https://opentele2.readthedocs.io/en/latest/documentation/authorization/api/#generate) using real data that recognized by Telegram server.
-
-## Dependencies
-
-- [telethon](https://github.com/LonamiWebs/Telethon) - Widely used Telegram's API library for Python.
-- [tgcrypto](https://github.com/pyrogram/tgcrypto) - AES-256-IGE encryption to works with `tdata`.
+A **Python Telegram API Library** for converting between **tdata** and **telethon** sessions, with built-in **official Telegram APIs**.
 
 ## Installation
-- Install from [PyPI](https://pypi.org/project/opentele2/):
-```pip title="pip"
+
+```bash
 pip install --upgrade opentele2
 ```
 
-## First Run
-Load TDesktop from tdata folder and convert it to telethon, with a custom API:
-```python
-from opentele2.td import TDesktop
-from opentele2.tl import TelegramClient
-from opentele2.api import API, CreateNewSession, UseCurrentSession
-import asyncio
+## Documentation
 
-async def main():
-    
-    # Load TDesktop client from tdata folder
-    tdataFolder = r"C:\Users\<username>\AppData\Roaming\Telegram Desktop\tdata"
-    tdesk = TDesktop(tdataFolder)
+For full documentation, guides, API reference, and examples, please visit the official documentation website:
 
-    # Using official iOS API with randomly generated device info
-    # print(api) to see more
-    api = API.TelegramIOS.Generate()
+**[https://opentele2.github.io/](https://opentele2.github.io/)**
 
-    # Convert TDesktop session to telethon client
-    # CreateNewSession flag will use the current existing session to
-    # authorize the new client by `Login via QR code`.
-    client = await tdesk.ToTelethon("newSession.session", CreateNewSession, api)
+### Quick Links
 
-    # Although Telegram Desktop doesn't let you authorize other
-    # sessions via QR Code (or it doesn't have that feature),
-    # it is still available across all platforms (APIs).
+- [Getting Started](https://opentele2.github.io/)
+- [Documentation & API Reference](https://opentele2.github.io/documentation)
+- [Examples & Recipes](https://opentele2.github.io/examples)
 
-    # Connect and print all logged in devices
-    await client.connect()
-    await client.PrintSessions()
+## A New Era for opentele
 
-asyncio.run(main())
-```
+**opentele2** is the rebirth of the original opentele project. The library is actively maintained and continues the original idea with current Telegram Desktop and Telethon support, bug fixes, and new features.
 
-## Authorization
-**opentele2** offers the ability to use **official APIs**, which are used by official apps. You can check that out [here](https://opentele2.readthedocs.io/en/latest/documentation/authorization/api/#class-api).
-<br>
+This new era means the project is no longer just a compatibility fork. It focuses on a lighter dependency footprint, pure Python internals where possible, updated official Telegram API templates, and more realistic device fingerprint generation.
 
-According to [Telegram TOS](https://core.telegram.org/api/obtaining_api_id#using-the-api-id): *all accounts that sign up or log in using unofficial Telegram API clients are automatically put under observation to avoid violations of the Terms of Service*.
-<br>
-<br>
-It also uses the **[lang_pack](https://core.telegram.org/method/initConnection)** parameter, of which [telethon can't use](https://github.com/LonamiWebs/Telethon/blob/dd51aea4db90fd255a14e27192e221c70b45e105/telethon/_client/telegrambaseclient.py#L197) because it's for official apps only.
-<br>
-Therefore, **there are no differences** between using opentele2 and official apps, the server can't tell you apart.
+### Key Enhancements
 
-## New features
-- **PyQt5 Removed**: The **PyQt5** library has been removed. Its functionality has been reimplemented in **pure Python** to eliminate overhead and avoid installing unnecessary heavy dependencies.
-- **New Fingerprints**: Some improvements of device information generation. The library now uses a new device database.
-
-
-## Examples
-The best way to learn anything is by looking at the examples. Am I right?
-
-- Example on [readthedocs](https://opentele2.readthedocs.io/en/latest/examples/)
-- Example on [github](./examples)
-
-## Documentation [![documentation](https://readthedocs.org/projects/opentele2/badge/?version=latest&style=flat)](https://opentele2.readthedocs.io/)
-- Read documentation on [readthedocs](https://opentele2.readthedocs.io/en/latest/documentation/telegram-desktop/tdesktop/)
-- Read documentation on [github](https://github.com/DedInc/opentele2/tree/main/docs)
+- **PyQt5 Removed**: The **PyQt5** dependency has been removed. Its required functionality was reimplemented in **pure Python** to reduce overhead and avoid installing unnecessary heavy dependencies.
+- **New Fingerprints**: Device information generation has been improved. The library now uses a new device database for more realistic client profiles.

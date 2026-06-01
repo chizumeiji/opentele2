@@ -1,12 +1,13 @@
 from __future__ import annotations
+
 from .shared import (  # noqa: F401
+    MTP,
     Account,
-    MapData,
-    StorageAccount,
     AuthKey,
     AuthKeyType,
-    MTP,
-    Storage,
+    MapData,
     Serialize,
+    Storage,
+    StorageAccount,
     TDesktop,
 )

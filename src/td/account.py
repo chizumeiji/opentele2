@@ -1,6 +1,15 @@
 from __future__ import annotations
 
-from ..utils import BaseObject
+import asyncio
+import logging
+import typing
+
+from telethon.network.connection.connection import Connection
+from telethon.network.connection.tcpfull import ConnectionTcpFull
+from telethon.sessions.abstract import Session
+
+from .. import tl
+from ..api import API, APIData, CreateNewSession, LoginFlag, UseCurrentSession
 from ..exception import (
     Expects,
     LoginFlagInvalid,
@@ -10,22 +19,12 @@ from ..exception import (
     TDataAuthKeyNotFound,
     TelethonUnauthorized,
 )
-from ..api import API, APIData, CreateNewSession, LoginFlag, UseCurrentSession
-from .configs import DcId
+from ..qt_compat import QByteArray, QDataStream, QIODevice
+from ..utils import BaseObject
 from . import shared as td
-from .. import tl
+from .configs import DcId
 from .map_data import MapData
 from .storage_account import StorageAccount
-from typing import List, Optional, Type, Union
-from ..qt_compat import QByteArray, QDataStream, QIODevice
-import asyncio
-import typing
-
-from telethon.network.connection.connection import Connection
-from telethon.network.connection.tcpfull import ConnectionTcpFull
-from telethon.sessions.abstract import Session
-
-import logging
 
 
 class Account(BaseObject):
@@ -34,14 +33,14 @@ class Account(BaseObject):
     def __init__(
         self,
         owner: td.TDesktop,
-        basePath: Optional[str] = None,
-        api: Union[Type[APIData], APIData] = API.TelegramDesktop,
-        keyFile: Optional[str] = None,
+        basePath: str | None = None,
+        api: type[APIData] | APIData = API.TelegramDesktop,
+        keyFile: str | None = None,
         index: int = 0,
     ) -> None:
         self.__owner = owner
-        self.__localKey: Optional[td.AuthKey] = None
-        self.__authKey: Optional[td.AuthKey] = None
+        self.__localKey: td.AuthKey | None = None
+        self.__authKey: td.AuthKey | None = None
         self.__isLoaded = False
         self.__isAuthorized = False
         self.__UserId = 0
@@ -52,8 +51,8 @@ class Account(BaseObject):
             keyFile if (keyFile is not None) else td.TDesktop.kDefaultKeyFile
         )
 
-        self.__mtpKeys: typing.List[td.AuthKey] = []
-        self.__mtpKeysToDestroy: typing.List[td.AuthKey] = []
+        self.__mtpKeys: list[td.AuthKey] = []
+        self.__mtpKeysToDestroy: list[td.AuthKey] = []
         self.api = api
 
         self._local = StorageAccount(
@@ -62,11 +61,11 @@ class Account(BaseObject):
         self.index = index
 
     @property
-    def api(self) -> APIData:
+    def api(self) -> type[APIData] | APIData:
         return self.__api
 
     @api.setter
-    def api(self, value) -> None:
+    def api(self, value: type[APIData] | APIData) -> None:
         self.__api = value
         if self.owner.api != self.api:
             self.owner.api = self.api
@@ -84,21 +83,21 @@ class Account(BaseObject):
         return self.__keyFile
 
     @keyFile.setter
-    def keyFile(self, value):
+    def keyFile(self, value: str) -> None:
         self.__keyFile = value
         self._local.keyFile = td.Storage.ComposeDataString(value, self.index)
 
     @property
-    def localKey(self) -> Optional[td.AuthKey]:
+    def localKey(self) -> td.AuthKey | None:
         return self.__localKey
 
     @localKey.setter
-    def localKey(self, value):
+    def localKey(self, value: td.AuthKey | None) -> None:
         self.__localKey = value
         self._local.localKey = value
 
     @property
-    def authKey(self) -> Optional[td.AuthKey]:
+    def authKey(self) -> td.AuthKey | None:
         return self.__authKey
 
     @property
@@ -127,7 +126,7 @@ class Account(BaseObject):
         self.__localKey = localKey
         return self._local.start(localKey)
 
-    def _findMainAuthKey(self):
+    def _findMainAuthKey(self) -> None:
         for key in self.__mtpKeys:
             if key.dcId == self.MainDcId:
                 self.__authKey = key
@@ -138,9 +137,9 @@ class Account(BaseObject):
         self,
         dcId: DcId,
         userId: int,
-        mtpKeys: List[td.AuthKey],
-        mtpKeysToDestroy: Optional[List[td.AuthKey]] = None,
-    ):
+        mtpKeys: list[td.AuthKey],
+        mtpKeysToDestroy: list[td.AuthKey] | None = None,
+    ) -> None:
         if mtpKeysToDestroy is None:
             mtpKeysToDestroy = []
         self.__MainDcId = dcId
@@ -149,7 +148,7 @@ class Account(BaseObject):
         self._findMainAuthKey()
         self.__isLoaded = True
 
-    def _setMtpAuthorization(self, serialized: QByteArray):
+    def _setMtpAuthorization(self, serialized: QByteArray) -> None:
         stream = QDataStream(serialized)
         stream.setVersion(QDataStream.Version.Qt_5_1)
 
@@ -165,7 +164,7 @@ class Account(BaseObject):
             QDataStreamFailed("Could not read main fields from mtp authorization."),
         )
 
-        def readKeys(keys: typing.List[td.AuthKey]):
+        def readKeys(keys: list[td.AuthKey]) -> None:
             key_count = stream.readInt32()
             Expects(
                 stream.status() == QDataStream.Status.Ok,
@@ -189,7 +188,7 @@ class Account(BaseObject):
     def serializeMtpAuthorization(self) -> QByteArray:
         Expects(self.isLoaded(), "Account data not loaded yet")
 
-        def writeKeys(stream: QDataStream, keys: typing.List[td.AuthKey]):
+        def writeKeys(stream: QDataStream, keys: list[td.AuthKey]) -> None:
             stream.writeInt32(len(keys))
             for key in keys:
                 stream.writeInt32(key.dcId)
@@ -207,14 +206,14 @@ class Account(BaseObject):
         writeKeys(stream, self.__mtpKeysToDestroy)
         return result
 
-    def _writeData(self, baseGlobalPath: str, keyFile: Optional[str] = None) -> None:
+    def _writeData(self, baseGlobalPath: str, keyFile: str | None = None) -> None:
         self._local._writeData(baseGlobalPath, keyFile)
 
     def SaveTData(
         self,
-        basePath: Optional[str] = None,
-        passcode: Optional[str] = None,
-        keyFile: Optional[str] = None,
+        basePath: str | None = None,
+        passcode: str | None = None,
+        keyFile: str | None = None,
     ) -> None:
         if basePath is None:
             basePath = self.basePath
@@ -229,15 +228,15 @@ class Account(BaseObject):
     @typing.overload
     async def ToTelethon(
         self,
-        session: Optional[Union[str, Session]] = None,
-        flag: Type[LoginFlag] = CreateNewSession,
-        api: Union[Type[APIData], APIData] = API.TelegramDesktop,
-        password: Optional[str] = None,
+        session: str | Session | None = None,
+        flag: type[LoginFlag] = CreateNewSession,
+        api: type[APIData] | APIData = API.TelegramDesktop,
+        password: str | None = None,
         *,
-        connection: typing.Type[Connection] = ConnectionTcpFull,
+        connection: type[Connection] = ConnectionTcpFull,
         use_ipv6: bool = False,
-        proxy: Optional[Union[tuple, dict]] = None,
-        local_addr: Optional[Union[str, tuple]] = None,
+        proxy: tuple | dict | None = None,
+        local_addr: str | tuple | None = None,
         timeout: int = 10,
         request_retries: int = 5,
         connection_retries: int = 5,
@@ -246,18 +245,18 @@ class Account(BaseObject):
         sequential_updates: bool = False,
         flood_sleep_threshold: int = 60,
         raise_last_call_error: bool = False,
-        loop: Optional[asyncio.AbstractEventLoop] = None,
-        base_logger: Optional[Union[str, logging.Logger]] = None,
+        loop: asyncio.AbstractEventLoop | None = None,
+        base_logger: str | logging.Logger | None = None,
         receive_updates: bool = True,
     ) -> tl.TelegramClient:
         pass
 
     async def ToTelethon(
         self,
-        session: Optional[Union[str, Session]] = None,
-        flag: Type[LoginFlag] = CreateNewSession,
-        api: Union[Type[APIData], APIData] = API.TelegramDesktop,
-        password: Optional[str] = None,
+        session: str | Session | None = None,
+        flag: type[LoginFlag] = CreateNewSession,
+        api: type[APIData] | APIData = API.TelegramDesktop,
+        password: str | None = None,
         **kwargs,
     ) -> tl.TelegramClient:
         Expects(
@@ -272,15 +271,18 @@ class Account(BaseObject):
     @staticmethod
     async def FromTelethon(
         telethonClient: tl.TelegramClient,
-        flag: Type[LoginFlag] = CreateNewSession,
-        api: Union[Type[APIData], APIData] = API.TelegramDesktop,
-        password: Optional[str] = None,
-        owner: Optional[td.TDesktop] = None,
-    ):
+        flag: type[LoginFlag] = CreateNewSession,
+        api: type[APIData] | APIData = API.TelegramDesktop,
+        password: str | None = None,
+        owner: td.TDesktop | None = None,
+    ) -> Account:
         Expects(
             (flag == CreateNewSession) or (flag == UseCurrentSession),
             LoginFlagInvalid("LoginFlag invalid"),
         )
+
+        copy: tl.TelegramClient | None = None
+        should_disconnect_copy = flag == CreateNewSession
 
         if flag == CreateNewSession:
             if not telethonClient.is_connected():
@@ -301,40 +303,44 @@ class Account(BaseObject):
         else:
             copy = telethonClient
 
-        ss = copy.session
-        authKey = ss.auth_key.key
-        dcId = DcId(ss.dc_id)
-        userId = copy.UserId
-        authKey = td.AuthKey(authKey, td.AuthKeyType.ReadFromFile, dcId)
-
-        if userId is None:
-            await copy.connect()
-            await copy.get_me()
+        try:
+            ss = copy.session
+            authKey = ss.auth_key.key
+            dcId = DcId(ss.dc_id)
             userId = copy.UserId
+            authKey = td.AuthKey(authKey, td.AuthKeyType.ReadFromFile, dcId)
 
-        if owner is not None:
-            Expects(
-                owner.accountsCount < td.TDesktop.kMaxAccounts,
-                exception=MaxAccountLimit(
-                    "You can't have more than 3 accounts in one TDesktop client"
-                ),
-            )
+            if userId is None:
+                await copy.connect()
+                await copy.get_me()
+                userId = copy.UserId
 
-            index = owner.accountsCount
-            newAccount = Account(
-                owner=owner,
-                basePath=owner.basePath,
-                api=api,
-                keyFile=owner.keyFile,
-                index=index,
-            )
-            newAccount._setMtpAuthorizationCustom(dcId, userId, [authKey])
-            owner._addSingleAccount(newAccount)
-        else:
-            index = 0
-            newOwner = td.TDesktop()
-            newAccount = Account(owner=newOwner, api=api, index=index)
-            newAccount._setMtpAuthorizationCustom(dcId, userId, [authKey])
-            newOwner._addSingleAccount(newAccount)
+            if owner is not None:
+                Expects(
+                    owner.accountsCount < td.TDesktop.kMaxAccounts,
+                    exception=MaxAccountLimit(
+                        "You can't have more than 3 accounts in one TDesktop client"
+                    ),
+                )
 
-        return newAccount
+                index = owner.accountsCount
+                newAccount = Account(
+                    owner=owner,
+                    basePath=owner.basePath,
+                    api=api,
+                    keyFile=owner.keyFile,
+                    index=index,
+                )
+                newAccount._setMtpAuthorizationCustom(dcId, userId, [authKey])
+                owner._addSingleAccount(newAccount)
+            else:
+                index = 0
+                newOwner = td.TDesktop()
+                newAccount = Account(owner=newOwner, api=api, index=index)
+                newAccount._setMtpAuthorizationCustom(dcId, userId, [authKey])
+                newOwner._addSingleAccount(newAccount)
+
+            return newAccount
+        finally:
+            if should_disconnect_copy and copy is not None:
+                await tl.TelegramClient._disconnect_client(copy, close_session=True)

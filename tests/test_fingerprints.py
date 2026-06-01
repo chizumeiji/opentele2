@@ -11,16 +11,16 @@ sys.path.insert(1, base_dir)
 import pytest
 
 from src.api import API, APIData
-from src.devices import WebBrowserDevice, DeviceInfo
+from src.devices import DeviceInfo, WebBrowserDevice
 from src.exception import SessionFileNotFound
 from src.fingerprint import (
-    validate_init_connection_params,
-    FingerprintConfig,
-    StrictMode,
-    get_recommended_layer,
-    get_platform_versions,
     LAYER,
     PLATFORM_VERSIONS,
+    FingerprintConfig,
+    StrictMode,
+    get_platform_versions,
+    get_recommended_layer,
+    validate_init_connection_params,
 )
 from src.version_fetcher import fetch_all_versions
 
@@ -28,21 +28,26 @@ TESTS_DIR = pathlib.Path(__file__).parent
 SESSIONS_DIR = TESTS_DIR / "sessions"
 TDATAS_DIR = TESTS_DIR / "tdatas"
 
+JsonDict = dict[str, object]
+SessionId = str
+TDataId = str
+ApiClass = type[APIData]
 
-def load_session_json(session_id: str) -> dict:
+
+def load_session_json(session_id: SessionId) -> JsonDict:
     json_path = SESSIONS_DIR / f"{session_id}.json"
-    with open(json_path, "r", encoding="utf-8") as f:
+    with open(json_path, encoding="utf-8") as f:
         return json.load(f)
 
 
-def list_session_ids() -> list:
+def list_session_ids() -> list[SessionId]:
     ids = []
     for f in SESSIONS_DIR.glob("*.json"):
         ids.append(f.stem)
     return sorted(ids)
 
 
-def list_tdata_ids() -> list:
+def list_tdata_ids() -> list[TDataId]:
     ids = []
     for d in TDATAS_DIR.iterdir():
         if d.is_dir():
@@ -50,56 +55,56 @@ def list_tdata_ids() -> list:
     return sorted(ids)
 
 
-SESSION_IDS = list_session_ids()
-TDATA_IDS = list_tdata_ids()
+SESSION_IDS: list[SessionId] = list_session_ids()
+TDATA_IDS: list[TDataId] = list_tdata_ids()
 
 
 class TestWebFingerprints:
-    def test_web_z_generate_returns_valid_api(self):
+    def test_web_z_generate_returns_valid_api(self) -> None:
         api = API.TelegramWeb_Z.Generate()
         assert isinstance(api, APIData)
         assert api.api_id == 2496
         assert api.device_model is not None
         assert len(api.device_model) > 10
 
-    def test_web_a_generate_returns_valid_api(self):
+    def test_web_a_generate_returns_valid_api(self) -> None:
         api = API.TelegramWeb_A.Generate()
         assert isinstance(api, APIData)
         assert api.api_id == 2496
 
-    def test_web_k_generate_returns_valid_api(self):
+    def test_web_k_generate_returns_valid_api(self) -> None:
         api = API.TelegramWeb_K.Generate()
         assert isinstance(api, APIData)
         assert api.api_id == 2496
 
-    def test_webogram_generate_returns_valid_api(self):
+    def test_webogram_generate_returns_valid_api(self) -> None:
         api = API.Webogram.Generate()
         assert isinstance(api, APIData)
         assert api.api_id == 2496
 
-    def test_unique_id_determinism(self):
+    def test_unique_id_determinism(self) -> None:
         a = API.TelegramWeb_Z.Generate("test_seed")
         b = API.TelegramWeb_Z.Generate("test_seed")
         assert a.device_model == b.device_model
         assert a.system_version == b.system_version
 
-    def test_different_unique_ids_differ(self):
+    def test_different_unique_ids_differ(self) -> None:
         a = API.TelegramWeb_Z.Generate("seed_a")
         b = API.TelegramWeb_Z.Generate("seed_b")
         assert isinstance(a, APIData) and isinstance(b, APIData)
 
-    def test_no_unique_id_randomizes(self):
+    def test_no_unique_id_randomizes(self) -> None:
         a = API.TelegramWeb_Z.Generate()
         b = API.TelegramWeb_Z.Generate()
         assert a.device_model and b.device_model
 
-    def test_web_z_and_web_k_system_version_differ(self):
+    def test_web_z_and_web_k_system_version_differ(self) -> None:
         z = API.TelegramWeb_Z.Generate("same_seed")
         k = API.TelegramWeb_K.Generate("same_seed")
         assert z.system_version is not None
         assert k.system_version is not None
 
-    def test_web_browser_device_class_directly(self):
+    def test_web_browser_device_class_directly(self) -> None:
         WebBrowserDevice._generated = False
         WebBrowserDevice.__gen__()
         assert len(WebBrowserDevice.deviceList) > 0
@@ -109,12 +114,12 @@ class TestWebFingerprints:
         assert device.model
         assert device.version
 
-    def test_generated_ua_contains_browser_info(self):
+    def test_generated_ua_contains_browser_info(self) -> None:
         api = API.TelegramWeb_Z.Generate()
         ua = api.device_model
         assert "Mozilla" in ua or "Chrome" in ua or "Firefox" in ua or "Edg" in ua
 
-    def test_all_web_apis_preserved_after_generate(self):
+    def test_all_web_apis_preserved_after_generate(self) -> None:
         for cls in [
             API.TelegramWeb_Z,
             API.TelegramWeb_A,
@@ -128,7 +133,7 @@ class TestWebFingerprints:
             assert api.lang_code == cls.lang_code
             assert api.lang_pack == cls.lang_pack
 
-    def test_browser_stat_weights_applied(self):
+    def test_browser_stat_weights_applied(self) -> None:
         WebBrowserDevice._generated = False
         WebBrowserDevice.__gen__()
         device_list = WebBrowserDevice.deviceList
@@ -141,14 +146,18 @@ class TestWebFingerprints:
 
         if edge_entries:
             assert len(chrome_entries) > len(edge_entries), (
-                f"Chrome ({len(chrome_entries)}) should outnumber Edge ({len(edge_entries)})"
+                "Chrome "
+                f"({len(chrome_entries)}) should outnumber "
+                f"Edge ({len(edge_entries)})"
             )
         if firefox_entries:
             assert len(chrome_entries) > len(firefox_entries), (
-                f"Chrome ({len(chrome_entries)}) should outnumber Firefox ({len(firefox_entries)})"
+                "Chrome "
+                f"({len(chrome_entries)}) should outnumber "
+                f"Firefox ({len(firefox_entries)})"
             )
 
-    def test_k_device_list_also_weighted(self):
+    def test_k_device_list_also_weighted(self) -> None:
         WebBrowserDevice._generated = False
         WebBrowserDevice.__gen__()
         assert len(WebBrowserDevice._k_deviceList) == len(WebBrowserDevice.deviceList)
@@ -156,28 +165,28 @@ class TestWebFingerprints:
 
 class TestSessionJsonConsistency:
     @pytest.fixture(params=SESSION_IDS)
-    def session_id(self, request):
-        return request.param
+    def session_id(self, request: pytest.FixtureRequest) -> SessionId:
+        return str(request.param)
 
-    def test_json_has_required_fields(self, session_id):
+    def test_json_has_required_fields(self, session_id: SessionId) -> None:
         data = load_session_json(session_id)
         for field in ["app_id", "app_hash", "device", "sdk", "app_version"]:
             assert field in data, f"Missing {field} in {session_id}.json"
 
-    def test_app_id_is_valid(self, session_id):
+    def test_app_id_is_valid(self, session_id: SessionId) -> None:
         data = load_session_json(session_id)
         assert isinstance(data["app_id"], int)
         assert data["app_id"] > 0
 
-    def test_app_hash_is_nonempty(self, session_id):
+    def test_app_hash_is_nonempty(self, session_id: SessionId) -> None:
         data = load_session_json(session_id)
         assert data["app_hash"] and len(data["app_hash"]) > 0
 
-    def test_device_is_nonempty(self, session_id):
+    def test_device_is_nonempty(self, session_id: SessionId) -> None:
         data = load_session_json(session_id)
         assert data["device"] and len(data["device"]) > 0
 
-    def test_api_id_matches_app_hash(self, session_id):
+    def test_api_id_matches_app_hash(self, session_id: SessionId) -> None:
         data = load_session_json(session_id)
         known = {
             2040: "b18441a1ff607e10a989891a5462e627",
@@ -187,30 +196,30 @@ class TestSessionJsonConsistency:
         if data["app_id"] in known:
             assert data["app_hash"] == known[data["app_id"]]
 
-    def test_web_sessions_have_user_agent(self, session_id):
+    def test_web_sessions_have_user_agent(self, session_id: SessionId) -> None:
         data = load_session_json(session_id)
         lp = data.get("lang_pack", "")
         if lp in ("weba", "webk", ""):
             if data["app_id"] == 2496:
                 assert "Mozilla" in data["device"] or "Chrome" in data["device"]
 
-    def test_desktop_sessions_have_device_name(self, session_id):
+    def test_desktop_sessions_have_device_name(self, session_id: SessionId) -> None:
         data = load_session_json(session_id)
         if data.get("lang_pack") == "tdesktop":
             assert len(data["device"]) > 0
             assert "Mozilla" not in data["device"]
 
-    def test_session_file_matches_filename(self, session_id):
+    def test_session_file_matches_filename(self, session_id: SessionId) -> None:
         data = load_session_json(session_id)
         if "session_file" in data:
             assert data["session_file"] == session_id
 
-    def test_lang_code_is_valid(self, session_id):
+    def test_lang_code_is_valid(self, session_id: SessionId) -> None:
         data = load_session_json(session_id)
         lc = data.get("lang_code", "en")
         assert isinstance(lc, str) and len(lc) >= 2
 
-    def test_system_lang_code_is_valid(self, session_id):
+    def test_system_lang_code_is_valid(self, session_id: SessionId) -> None:
         data = load_session_json(session_id)
         slc = data.get("system_lang_code") or data.get("system_lang_pack", "en")
         assert isinstance(slc, str) and len(slc) >= 2
@@ -218,29 +227,29 @@ class TestSessionJsonConsistency:
 
 class TestTDataLoading:
     @pytest.fixture(params=TDATA_IDS)
-    def tdata_id(self, request):
-        return request.param
+    def tdata_id(self, request: pytest.FixtureRequest) -> TDataId:
+        return str(request.param)
 
-    def test_tdata_directory_has_required_structure(self, tdata_id):
+    def test_tdata_directory_has_required_structure(self, tdata_id: TDataId) -> None:
         tdata_path = TDATAS_DIR / tdata_id / "tdata"
         assert tdata_path.exists(), f"tdata directory not found: {tdata_path}"
         key_data = tdata_path / "key_datas"
         assert key_data.exists(), f"key_datas not found in {tdata_path}"
 
-    def test_tdata_has_matching_session(self, tdata_id):
+    def test_tdata_has_matching_session(self, tdata_id: TDataId) -> None:
         session_path = SESSIONS_DIR / f"{tdata_id}.session"
         json_path = SESSIONS_DIR / f"{tdata_id}.json"
         assert session_path.exists(), f"No session file for tdata {tdata_id}"
         assert json_path.exists(), f"No JSON file for tdata {tdata_id}"
 
-    def test_tdata_loads_with_tdesktop(self, tdata_id):
+    def test_tdata_loads_with_tdesktop(self, tdata_id: TDataId) -> None:
         from src.td import TDesktop
 
         tdata_path = str(TDATAS_DIR / tdata_id / "tdata")
         tdesk = TDesktop(tdata_path)
         assert tdesk.isLoaded(), f"Failed to load tdata: {tdata_id}"
 
-    def test_tdata_json_consistency(self, tdata_id):
+    def test_tdata_json_consistency(self, tdata_id: TDataId) -> None:
         from src.td import TDesktop
 
         load_session_json(tdata_id)
@@ -252,7 +261,7 @@ class TestTDataLoading:
 
 
 class TestFingerprintValidation:
-    def test_valid_android_params(self):
+    def test_valid_android_params(self) -> None:
         issues = validate_init_connection_params(
             api_id=6,
             device_model="Samsung SM-S928B",
@@ -264,7 +273,7 @@ class TestFingerprintValidation:
         )
         assert issues == []
 
-    def test_valid_desktop_params(self):
+    def test_valid_desktop_params(self) -> None:
         issues = validate_init_connection_params(
             api_id=2040,
             device_model="Desktop",
@@ -276,7 +285,7 @@ class TestFingerprintValidation:
         )
         assert issues == []
 
-    def test_valid_web_params(self):
+    def test_valid_web_params(self) -> None:
         issues = validate_init_connection_params(
             api_id=2496,
             device_model="Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
@@ -288,7 +297,7 @@ class TestFingerprintValidation:
         )
         assert issues == []
 
-    def test_empty_device_model_flagged(self):
+    def test_empty_device_model_flagged(self) -> None:
         issues = validate_init_connection_params(
             api_id=6,
             device_model="",
@@ -300,7 +309,7 @@ class TestFingerprintValidation:
         )
         assert len(issues) > 0
 
-    def test_invalid_lang_pack_flagged(self):
+    def test_invalid_lang_pack_flagged(self) -> None:
         issues = validate_init_connection_params(
             api_id=6,
             device_model="Samsung SM-S928B",
@@ -312,7 +321,7 @@ class TestFingerprintValidation:
         )
         assert any("lang_pack" in i for i in issues)
 
-    def test_short_lang_code_flagged(self):
+    def test_short_lang_code_flagged(self) -> None:
         issues = validate_init_connection_params(
             api_id=6,
             device_model="Samsung SM-S928B",
@@ -324,7 +333,7 @@ class TestFingerprintValidation:
         )
         assert any("lang_code" in i for i in issues)
 
-    def test_strict_mode_api_id_mismatch(self):
+    def test_strict_mode_api_id_mismatch(self) -> None:
         issues = validate_init_connection_params(
             api_id=99999,
             device_model="Samsung SM-S928B",
@@ -337,7 +346,7 @@ class TestFingerprintValidation:
         )
         assert any("api_id" in i for i in issues)
 
-    def test_strict_mode_passes_for_correct_pair(self):
+    def test_strict_mode_passes_for_correct_pair(self) -> None:
         issues = validate_init_connection_params(
             api_id=6,
             device_model="Samsung SM-S928B",
@@ -350,7 +359,7 @@ class TestFingerprintValidation:
         )
         assert not any("api_id" in i for i in issues)
 
-    def test_android_missing_region_in_system_lang(self):
+    def test_android_missing_region_in_system_lang(self) -> None:
         issues = validate_init_connection_params(
             api_id=6,
             device_model="Samsung SM-S928B",
@@ -362,7 +371,7 @@ class TestFingerprintValidation:
         )
         assert any("region" in i for i in issues)
 
-    def test_session_json_passes_validation(self):
+    def test_session_json_passes_validation(self) -> None:
         for sid in list_session_ids():
             data = load_session_json(sid)
             lp = data.get("lang_pack", "")
@@ -381,12 +390,12 @@ class TestFingerprintValidation:
 
 
 class TestFingerprintConfig:
-    def test_default_config(self):
+    def test_default_config(self) -> None:
         config = FingerprintConfig()
         assert config.strict_mode == StrictMode.WARN
         assert config.auto_validate is True
 
-    def test_strict_raises(self):
+    def test_strict_raises(self) -> None:
         config = FingerprintConfig(strict_mode=StrictMode.STRICT)
         with pytest.raises(ValueError):
             config.validate_params(
@@ -399,7 +408,7 @@ class TestFingerprintConfig:
                 lang_code="en",
             )
 
-    def test_off_mode_skips(self):
+    def test_off_mode_skips(self) -> None:
         config = FingerprintConfig(strict_mode=StrictMode.OFF, auto_validate=False)
         config.validate_params(
             api_id=6,
@@ -411,7 +420,7 @@ class TestFingerprintConfig:
             lang_code="",
         )
 
-    def test_effective_layer(self):
+    def test_effective_layer(self) -> None:
         config = FingerprintConfig()
         layer = config.get_effective_layer()
         assert isinstance(layer, int)
@@ -419,7 +428,7 @@ class TestFingerprintConfig:
 
 
 class TestPlatformVersions:
-    def test_versions_not_empty(self):
+    def test_versions_not_empty(self) -> None:
         pv = get_platform_versions()
         assert pv.android_app_version
         assert pv.ios_app_version
@@ -429,7 +438,7 @@ class TestPlatformVersions:
         assert pv.web_k_version
         assert pv.chrome_version
 
-    def test_layer_is_positive(self):
+    def test_layer_is_positive(self) -> None:
         assert LAYER > 0
         layer = get_recommended_layer()
         assert layer > 0
@@ -450,7 +459,7 @@ class TestAllGenerateAPIs:
             API.Webogram,
         ],
     )
-    def test_generate_produces_valid_instance(self, api_cls):
+    def test_generate_produces_valid_instance(self, api_cls: ApiClass) -> None:
         api = api_cls.Generate()
         assert isinstance(api, APIData)
         assert api.api_id == api_cls.api_id
@@ -473,7 +482,7 @@ class TestAllGenerateAPIs:
             API.Webogram,
         ],
     )
-    def test_generate_deterministic_with_unique_id(self, api_cls):
+    def test_generate_deterministic_with_unique_id(self, api_cls: ApiClass) -> None:
         if api_cls == API.TelegramDesktop:
             a = api_cls.Generate("windows", "seed123")
             b = api_cls.Generate("windows", "seed123")
@@ -485,7 +494,7 @@ class TestAllGenerateAPIs:
 
 
 class TestAPIDataJson:
-    def test_from_json_basic(self):
+    def test_from_json_basic(self) -> None:
         data = {
             "app_id": 2040,
             "app_hash": "b18441a1ff607e10a989891a5462e627",
@@ -507,7 +516,7 @@ class TestAPIDataJson:
         assert api.lang_pack == "tdesktop"
         assert api.lang_code == "en"
 
-    def test_to_json_basic(self):
+    def test_to_json_basic(self) -> None:
         api = APIData(
             api_id=6,
             api_hash="eb06d4abfb49dc3eeb1aeb98ae0f581e",
@@ -531,7 +540,7 @@ class TestAPIDataJson:
         assert "session_file" in result
         assert "twoFA" in result
 
-    def test_from_json_roundtrip(self):
+    def test_from_json_roundtrip(self) -> None:
         api = APIData(
             api_id=2496,
             api_hash="8da85b0d5bfe62527e5b244c209159c3",
@@ -553,7 +562,7 @@ class TestAPIDataJson:
         assert reimported.lang_pack == api.lang_pack
         assert reimported.lang_code == api.lang_code
 
-    def test_from_json_system_lang_pack_fallback(self):
+    def test_from_json_system_lang_pack_fallback(self) -> None:
         data = {
             "app_id": 2040,
             "app_hash": "b18441a1ff607e10a989891a5462e627",
@@ -567,7 +576,7 @@ class TestAPIDataJson:
         api = APIData.from_json(data)
         assert api.system_lang_code == "ru-RU"
 
-    def test_to_json_with_extra(self):
+    def test_to_json_with_extra(self) -> None:
         api = APIData(
             api_id=2040,
             api_hash="b18441a1ff607e10a989891a5462e627",
@@ -584,7 +593,7 @@ class TestAPIDataJson:
         assert result["phone"] == "+1234567890"
         assert result["session_file"] == "myfile"
 
-    def test_from_json_real_sessions(self):
+    def test_from_json_real_sessions(self) -> None:
         for sid in list_session_ids():
             data = load_session_json(sid)
             api = APIData.from_json(data)
@@ -597,11 +606,13 @@ class TestAPIDataJson:
 
 class TestSessionJsonImport:
     @pytest.fixture(params=SESSION_IDS)
-    def session_id(self, request):
-        return request.param
+    def session_id(self, request: pytest.FixtureRequest) -> SessionId:
+        return str(request.param)
 
     @pytest.mark.asyncio
-    async def test_from_session_json_creates_client(self, session_id):
+    async def test_from_session_json_creates_client(
+        self, session_id: SessionId
+    ) -> None:
         from src.tl import TelegramClient
 
         session_path = str(SESSIONS_DIR / session_id)
@@ -611,7 +622,9 @@ class TestSessionJsonImport:
         assert len(client.session.auth_key.key) == 256
 
     @pytest.mark.asyncio
-    async def test_from_session_json_preserves_auth_key(self, session_id):
+    async def test_from_session_json_preserves_auth_key(
+        self, session_id: SessionId
+    ) -> None:
         from src.tl import TelegramClient
 
         session_file = str(SESSIONS_DIR / f"{session_id}.session")
@@ -626,7 +639,7 @@ class TestSessionJsonImport:
         assert client.session.auth_key.key == raw_key
 
     @pytest.mark.asyncio
-    async def test_from_session_json_api_mapping(self, session_id):
+    async def test_from_session_json_api_mapping(self, session_id: SessionId) -> None:
         from src.tl import TelegramClient
 
         data = load_session_json(session_id)
@@ -641,7 +654,7 @@ class TestSessionJsonImport:
         assert client._api_data.app_version == data["app_version"]
 
     @pytest.mark.asyncio
-    async def test_from_session_json_dc_id(self, session_id):
+    async def test_from_session_json_dc_id(self, session_id: SessionId) -> None:
         from src.tl import TelegramClient
 
         session_file = str(SESSIONS_DIR / f"{session_id}.session")
@@ -656,7 +669,7 @@ class TestSessionJsonImport:
         assert client.session.dc_id == expected_dc
 
     @pytest.mark.asyncio
-    async def test_from_session_json_sets_user_id(self, session_id):
+    async def test_from_session_json_sets_user_id(self, session_id: SessionId) -> None:
         from src.tl import TelegramClient
 
         data = load_session_json(session_id)
@@ -667,14 +680,16 @@ class TestSessionJsonImport:
             assert client.UserId == data["id"]
 
     @pytest.mark.asyncio
-    async def test_from_session_json_missing_session_raises(self):
+    async def test_from_session_json_missing_session_raises(self) -> None:
         from src.tl import TelegramClient
 
         with pytest.raises(SessionFileNotFound):
             await TelegramClient.FromSessionJson("/nonexistent/path/fake")
 
     @pytest.mark.asyncio
-    async def test_from_session_json_with_extension(self, session_id):
+    async def test_from_session_json_with_extension(
+        self, session_id: SessionId
+    ) -> None:
         from src.tl import TelegramClient
 
         session_path = str(SESSIONS_DIR / f"{session_id}.session")
@@ -684,11 +699,13 @@ class TestSessionJsonImport:
 
 class TestSessionJsonExport:
     @pytest.fixture(params=SESSION_IDS)
-    def session_id(self, request):
-        return request.param
+    def session_id(self, request: pytest.FixtureRequest) -> SessionId:
+        return str(request.param)
 
     @pytest.mark.asyncio
-    async def test_save_creates_both_files(self, session_id, tmp_path):
+    async def test_save_creates_both_files(
+        self, session_id: SessionId, tmp_path: pathlib.Path
+    ) -> None:
         from src.tl import TelegramClient
 
         session_path = str(SESSIONS_DIR / session_id)
@@ -703,7 +720,9 @@ class TestSessionJsonExport:
         assert j_path.endswith(".json")
 
     @pytest.mark.asyncio
-    async def test_roundtrip_auth_key(self, session_id, tmp_path):
+    async def test_roundtrip_auth_key(
+        self, session_id: SessionId, tmp_path: pathlib.Path
+    ) -> None:
         from src.tl import TelegramClient
 
         session_path = str(SESSIONS_DIR / session_id)
@@ -717,7 +736,9 @@ class TestSessionJsonExport:
         assert client2.session.auth_key.key == orig_key
 
     @pytest.mark.asyncio
-    async def test_roundtrip_dc_id(self, session_id, tmp_path):
+    async def test_roundtrip_dc_id(
+        self, session_id: SessionId, tmp_path: pathlib.Path
+    ) -> None:
         from src.tl import TelegramClient
 
         session_path = str(SESSIONS_DIR / session_id)
@@ -731,7 +752,9 @@ class TestSessionJsonExport:
         assert client2.session.dc_id == orig_dc
 
     @pytest.mark.asyncio
-    async def test_json_has_required_fields(self, session_id, tmp_path):
+    async def test_json_has_required_fields(
+        self, session_id: SessionId, tmp_path: pathlib.Path
+    ) -> None:
         from src.tl import TelegramClient
 
         session_path = str(SESSIONS_DIR / session_id)
@@ -740,7 +763,7 @@ class TestSessionJsonExport:
         out_base = str(tmp_path / "field_test")
         _, j_path = await client.SaveSessionJson(out_base)
 
-        with open(j_path, "r", encoding="utf-8") as f:
+        with open(j_path, encoding="utf-8") as f:
             data = json.load(f)
 
         for field in [
@@ -760,7 +783,9 @@ class TestSessionJsonExport:
             assert field in data, f"Missing extra field {field}"
 
     @pytest.mark.asyncio
-    async def test_json_preserves_api_data(self, session_id, tmp_path):
+    async def test_json_preserves_api_data(
+        self, session_id: SessionId, tmp_path: pathlib.Path
+    ) -> None:
         from src.tl import TelegramClient
 
         orig_data = load_session_json(session_id)
@@ -770,7 +795,7 @@ class TestSessionJsonExport:
         out_base = str(tmp_path / "preserve_test")
         _, j_path = await client.SaveSessionJson(out_base)
 
-        with open(j_path, "r", encoding="utf-8") as f:
+        with open(j_path, encoding="utf-8") as f:
             exported = json.load(f)
 
         assert exported["app_id"] == orig_data["app_id"]
@@ -780,7 +805,7 @@ class TestSessionJsonExport:
         assert exported["app_version"] == orig_data["app_version"]
 
     @pytest.mark.asyncio
-    async def test_session_file_basename(self, tmp_path):
+    async def test_session_file_basename(self, tmp_path: pathlib.Path) -> None:
         from src.tl import TelegramClient
 
         sid = SESSION_IDS[0]
@@ -790,13 +815,15 @@ class TestSessionJsonExport:
         out_base = str(tmp_path / "my_session")
         _, j_path = await client.SaveSessionJson(out_base)
 
-        with open(j_path, "r", encoding="utf-8") as f:
+        with open(j_path, encoding="utf-8") as f:
             data = json.load(f)
 
         assert data["session_file"] == "my_session"
 
     @pytest.mark.asyncio
-    async def test_exported_session_is_valid_sqlite(self, session_id, tmp_path):
+    async def test_exported_session_is_valid_sqlite(
+        self, session_id: SessionId, tmp_path: pathlib.Path
+    ) -> None:
         from src.tl import TelegramClient
 
         session_path = str(SESSIONS_DIR / session_id)
@@ -822,49 +849,49 @@ class TestSessionJsonExport:
 
 
 class TestVersionFetcher:
-    def test_fetch_returns_dict(self):
+    def test_fetch_returns_dict(self) -> None:
         result = fetch_all_versions()
         assert isinstance(result, dict)
 
-    def test_fetched_desktop_version(self):
+    def test_fetched_desktop_version(self) -> None:
         result = fetch_all_versions()
         v = result.get("desktop_app_version", "")
         assert v, "desktop_app_version should be fetched"
         assert all(c.isdigit() or c == "." for c in v), f"Bad format: {v}"
 
-    def test_fetched_android_version(self):
+    def test_fetched_android_version(self) -> None:
         result = fetch_all_versions()
         v = result.get("android_app_version", "")
         assert v, "android_app_version should be fetched"
         parts = v.split(".")
         assert len(parts) >= 2
 
-    def test_fetched_telegram_x_version(self):
+    def test_fetched_telegram_x_version(self) -> None:
         result = fetch_all_versions()
         v = result.get("android_x_app_version", "")
         assert v, "android_x_app_version should be fetched"
 
-    def test_fetched_ios_version(self):
+    def test_fetched_ios_version(self) -> None:
         result = fetch_all_versions()
         v = result.get("ios_app_version", "")
         assert v, "ios_app_version should be fetched"
 
-    def test_fetched_macos_version(self):
+    def test_fetched_macos_version(self) -> None:
         result = fetch_all_versions()
         v = result.get("macos_app_version", "")
         assert v, "macos_app_version should be fetched"
 
-    def test_fetched_web_k_version(self):
+    def test_fetched_web_k_version(self) -> None:
         result = fetch_all_versions()
         v = result.get("web_k_version", "")
         assert v.endswith(" K"), f"web_k_version should end with ' K': {v}"
 
-    def test_fetched_web_a_version(self):
+    def test_fetched_web_a_version(self) -> None:
         result = fetch_all_versions()
         v = result.get("web_a_version", "")
         assert v.endswith(" A"), f"web_a_version should end with ' A': {v}"
 
-    def test_platform_versions_updated(self):
+    def test_platform_versions_updated(self) -> None:
         result = fetch_all_versions()
         if result.get("desktop_app_version"):
             assert (
@@ -877,9 +904,12 @@ class TestVersionFetcher:
         if result.get("ios_app_version"):
             assert PLATFORM_VERSIONS.ios_app_version == result["ios_app_version"]
 
-    def test_api_classes_synced(self):
+    def test_api_classes_synced(self) -> None:
         pv = PLATFORM_VERSIONS
-        assert API.TelegramAndroid.app_version == pv.android_app_version
+        assert (
+            API.TelegramAndroid.app_version
+            == f"{pv.android_app_version} ({pv.android_app_version_code})"
+        )
         assert (
             API.TelegramIOS.app_version
             == f"{pv.ios_app_version} ({pv.ios_build_number}) "
@@ -892,25 +922,25 @@ class TestVersionFetcher:
         assert API.TelegramWeb_A.app_version == pv.web_a_version
         assert API.TelegramWeb_K.app_version == pv.web_k_version
 
-    def test_api_desktop_version_has_suffix(self):
+    def test_api_desktop_version_has_suffix(self) -> None:
         pv = PLATFORM_VERSIONS
         expected = f"{pv.desktop_app_version} {pv.desktop_app_version_suffix}"
         assert API.TelegramDesktop.app_version == expected
 
-    def test_api_ios_system_version_synced(self):
+    def test_api_ios_system_version_synced(self) -> None:
         pv = PLATFORM_VERSIONS
         assert API.TelegramIOS.system_version == pv.ios_system_version
 
-    def test_api_macos_system_version_synced(self):
+    def test_api_macos_system_version_synced(self) -> None:
         pv = PLATFORM_VERSIONS
         assert API.TelegramMacOS.system_version == pv.macos_system_version
 
-    def test_results_are_cached(self):
+    def test_results_are_cached(self) -> None:
         a = fetch_all_versions()
         b = fetch_all_versions()
         assert a is b
 
-    def test_no_fetch_env_var(self):
+    def test_no_fetch_env_var(self) -> None:
         import src.version_fetcher as vf
 
         old_cached = vf._CACHED

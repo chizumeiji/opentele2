@@ -1,17 +1,16 @@
 from __future__ import annotations
 
-import os
 import platform
-from typing import Any, List, Dict, Tuple, Type, TypeVar, Union, Optional
+from typing import Any, TypeVar
 
 from .devices import (
     AndroidDevice,
     IOSDevice,
-    macOSDevice,
-    SystemInfo,
-    WindowsDevice,
     LinuxDevice,
+    SystemInfo,
     WebBrowserDevice,
+    WindowsDevice,
+    macOSDevice,
 )
 from .exception import Expects, NoInstanceMatched
 from .utils import BaseMetaClass, BaseObject, sharemethod
@@ -51,17 +50,22 @@ _DEFAULT_EXTRA_FIELDS = {
     "session_file": "",
 }
 
+_DEFAULT_WEB_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/148.0.0.0 Safari/537.36"
+)
 
-def _coalesce(val, default):
+
+def _coalesce(val: _T | None, default: _T) -> _T:
     return val if val is not None else default
 
 
 class BaseAPIMetaClass(BaseMetaClass):
     def __new__(
-        cls: Type[_T], clsName: str, bases: Tuple[type], attrs: Dict[str, Any]
+        cls: type[_T], clsName: str, bases: tuple[type], attrs: dict[str, Any]
     ) -> _T:
         result = super().__new__(cls, clsName, bases, attrs)
-        result._clsMakePID()
         result.__str__ = BaseAPIMetaClass.__str__
 
         return result
@@ -90,9 +94,7 @@ class BaseAPIMetaClass(BaseMetaClass):
         return result + "}"
 
 
-class APIData(object, metaclass=BaseAPIMetaClass):
-    CustomInitConnectionList: List[Union[Type[APIData], APIData]] = []
-
+class APIData(metaclass=BaseAPIMetaClass):
     api_id: int = None
     api_hash: str = None
     device_model: str = None
@@ -104,14 +106,14 @@ class APIData(object, metaclass=BaseAPIMetaClass):
 
     def __init__(
         self,
-        api_id: Optional[int] = None,
-        api_hash: Optional[str] = None,
-        device_model: Optional[str] = None,
-        system_version: Optional[str] = None,
-        app_version: Optional[str] = None,
-        lang_code: Optional[str] = None,
-        system_lang_code: Optional[str] = None,
-        lang_pack: Optional[str] = None,
+        api_id: int | None = None,
+        api_hash: str | None = None,
+        device_model: str | None = None,
+        system_version: str | None = None,
+        app_version: str | None = None,
+        lang_code: str | None = None,
+        system_lang_code: str | None = None,
+        lang_pack: str | None = None,
     ) -> None:
         Expects(
             (self.__class__ != APIData)
@@ -139,10 +141,8 @@ class APIData(object, metaclass=BaseAPIMetaClass):
             else:
                 self.device_model = system.machine
 
-        self._makePID()
-
     @sharemethod
-    def copy(glob: Union[Type[_T], _T] = _T) -> _T:
+    def copy(glob: type[_T] | _T = _T) -> _T:
         cls = glob if isinstance(glob, type) else glob.__class__
 
         return cls(
@@ -157,17 +157,17 @@ class APIData(object, metaclass=BaseAPIMetaClass):
         )
 
     @sharemethod
-    def get_cls(glob: Union[Type[_T], _T]) -> Type[_T]:
+    def get_cls(glob: type[_T] | _T) -> type[_T]:
         return glob if isinstance(glob, type) else glob.__class__
 
     @sharemethod
-    def destroy(glob: Union[Type[_T], _T]):
+    def destroy(glob: type[_T] | _T) -> None:
         if isinstance(glob, type):
             return
 
     @classmethod
     def _web_generate(
-        cls: Type[_T], unique_id: Optional[str] = None, variant: str = "z"
+        cls: type[_T], unique_id: str | None = None, variant: str = "z"
     ) -> _T:
         deviceInfo = WebBrowserDevice.RandomDevice(unique_id, variant=variant)
         return cls(device_model=deviceInfo.model, system_version=deviceInfo.version)
@@ -191,7 +191,7 @@ class APIData(object, metaclass=BaseAPIMetaClass):
             lang_pack=data.get("lang_pack", ""),
         )
 
-    def to_json(self, extra: Optional[dict] = None) -> dict:
+    def to_json(self, extra: dict | None = None) -> dict:
         result = {
             "app_id": self.api_id,
             "app_hash": self.api_hash,
@@ -212,30 +212,30 @@ class APIData(object, metaclass=BaseAPIMetaClass):
     def __eq__(self, __o: object) -> bool:
         if not isinstance(__o, APIData):
             return NotImplemented
-        return self.pid == __o.pid
+        return (
+            self.api_id == __o.api_id
+            and self.api_hash == __o.api_hash
+            and self.device_model == __o.device_model
+            and self.system_version == __o.system_version
+            and self.app_version == __o.app_version
+        )
 
-    def __del__(self):
-        self.destroy()
+    def __hash__(self) -> int:
+        return hash(
+            (
+                self.api_id,
+                self.api_hash,
+                self.device_model,
+                self.system_version,
+                self.app_version,
+            )
+        )
+
+    def __del__(self) -> None:
+        pass
 
     @classmethod
-    def _makePIDEnsure(cls) -> int:
-        while True:
-            pid = int.from_bytes(os.urandom(8), "little")
-            if cls.findData(pid) is None:
-                break
-        return pid
-
-    @classmethod
-    def _clsMakePID(cls: Type[APIData]):
-        cls.pid = cls._makePIDEnsure()
-        cls.CustomInitConnectionList.append(cls)
-
-    def _makePID(self):
-        self.pid = self.get_cls()._makePIDEnsure()
-        self.get_cls().CustomInitConnectionList.append(self)
-
-    @classmethod
-    def Generate(cls: Type[_T], unique_id: Optional[str] = None) -> _T:
+    def Generate(cls: type[_T], unique_id: str | None = None) -> _T:
         _GENERATE_MAP = {
             API.TelegramAndroid: (AndroidDevice, {}),
             API.TelegramAndroidX: (AndroidDevice, {}),
@@ -255,13 +255,6 @@ class APIData(object, metaclass=BaseAPIMetaClass):
         deviceInfo = device_cls.RandomDevice(unique_id, **kwargs)
         return cls(device_model=deviceInfo.model, system_version=deviceInfo.version)
 
-    @classmethod
-    def findData(cls: Type[_T], pid: int) -> Optional[_T]:
-        for x in cls.CustomInitConnectionList:
-            if x.pid == pid:
-                return x
-        return None
-
 
 class API(BaseObject):
     class TelegramDesktop(APIData):
@@ -276,7 +269,7 @@ class API(BaseObject):
 
         @classmethod
         def Generate(
-            cls: Type[_T], system: Optional[str] = None, unique_id: Optional[str] = None
+            cls: type[_T], system: str | None = None, unique_id: str | None = None
         ) -> _T:
             validList = ["windows", "macos", "linux"]
             if system is None or system not in validList:
@@ -300,7 +293,7 @@ class API(BaseObject):
         api_hash = "eb06d4abfb49dc3eeb1aeb98ae0f581e"
         device_model = "Samsung SM-S928B"
         system_version = "SDK 35"
-        app_version = "12.4.1"
+        app_version = "12.7.3"
         lang_code = "en"
         system_lang_code = "en-US"
         lang_pack = "android"
@@ -310,7 +303,7 @@ class API(BaseObject):
         api_hash = "3e0cb5efcd52300aec5994fdfc5bdc16"
         device_model = "Samsung SM-S928B"
         system_version = "SDK 35"
-        app_version = "12.4.1"
+        app_version = "0.28.3.1785"
         lang_code = "en"
         system_lang_code = "en-US"
         lang_pack = "android"
@@ -320,7 +313,7 @@ class API(BaseObject):
         api_hash = "33c45224029d59cb3ad0c16134215aeb"
         device_model = "iPhone"
         system_version = "26.2"
-        app_version = "12.3.1 (32078) "
+        app_version = "12.7"
         lang_code = "en"
         system_lang_code = "en-US"
         lang_pack = "ios"
@@ -330,7 +323,7 @@ class API(BaseObject):
         api_hash = "68875f756c9b437a8b916ca3de215815"
         device_model = "MacBook Pro"
         system_version = "macOS 26.2"
-        app_version = "12.4.1 (277873) "
+        app_version = "12.7"
         lang_code = "en"
         system_lang_code = "en-US"
         lang_pack = "macos"
@@ -338,15 +331,15 @@ class API(BaseObject):
     class TelegramWeb_A(APIData):
         api_id = 2496
         api_hash = "8da85b0d5bfe62527e5b244c209159c3"
-        device_model = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"
+        device_model = _DEFAULT_WEB_USER_AGENT
         system_version = "Windows"
-        app_version = "5.0.0 A"
+        app_version = "12.0.28 A"
         lang_code = "en"
         system_lang_code = "en-US"
         lang_pack = ""
 
         @classmethod
-        def Generate(cls: Type[_T], unique_id: Optional[str] = None) -> _T:
+        def Generate(cls: type[_T], unique_id: str | None = None) -> _T:
             return cls._web_generate(unique_id, variant="z")
 
     TelegramWeb_Z = TelegramWeb_A
@@ -354,21 +347,21 @@ class API(BaseObject):
     class TelegramWeb_K(APIData):
         api_id = 2496
         api_hash = "8da85b0d5bfe62527e5b244c209159c3"
-        device_model = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"
+        device_model = _DEFAULT_WEB_USER_AGENT
         system_version = "Win32"
-        app_version = "1.4.2 K"
+        app_version = "2.2 K"
         lang_code = "en"
         system_lang_code = "en-US"
         lang_pack = "macos"
 
         @classmethod
-        def Generate(cls: Type[_T], unique_id: Optional[str] = None) -> _T:
+        def Generate(cls: type[_T], unique_id: str | None = None) -> _T:
             return cls._web_generate(unique_id, variant="k")
 
     class Webogram(APIData):
         api_id = 2496
         api_hash = "8da85b0d5bfe62527e5b244c209159c3"
-        device_model = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"
+        device_model = _DEFAULT_WEB_USER_AGENT
         system_version = "Win32"
         app_version = "0.7.0"
         lang_code = "en"
@@ -376,7 +369,7 @@ class API(BaseObject):
         lang_pack = ""
 
         @classmethod
-        def Generate(cls: Type[_T], unique_id: Optional[str] = None) -> _T:
+        def Generate(cls: type[_T], unique_id: str | None = None) -> _T:
             return cls._web_generate(unique_id, variant="k")
 
 
@@ -401,7 +394,9 @@ def _sync_api_versions() -> None:
             f"{pv.desktop_app_version} {suffix}" if suffix else pv.desktop_app_version
         )
 
-        API.TelegramAndroid.app_version = pv.android_app_version
+        API.TelegramAndroid.app_version = (
+            f"{pv.android_app_version} ({pv.android_app_version_code})"
+        )
 
         API.TelegramAndroidX.app_version = pv.android_x_app_version
 
